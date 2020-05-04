@@ -1,10 +1,13 @@
 #include "./../CenTaxi/Header.h"
 
 DWORD WINAPI threadCom(LPVOID lpParam);
+DWORD WINAPI threadEncerra(LPVOID lpParam);
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThread;
+	HANDLE hThreadCom, hThreadEnc;
+	Shared sh;
+	sh.sair = 0;
 
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -12,12 +15,25 @@ int _tmain(int argc, TCHAR* argv[]) {
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
 
-	hThread = CreateThread(NULL, 0, threadCom, NULL, 0, NULL);
+	hThreadCom = CreateThread(NULL, 0, threadCom, NULL, 0, NULL);
+	hThreadEnc = CreateThread(NULL, 0, threadEncerra, &sh, 0, NULL);
 
-	WaitForSingleObject(hThread, INFINITE);
+	while (!sh.sair);
+	WaitForSingleObject(hThreadCom, INFINITE);
+	WaitForSingleObject(hThreadEnc, INFINITE);
 	return 0;
 }
 
+
+DWORD WINAPI threadEncerra(LPVOID lpParam) {
+	HANDLE hEvent;
+	Shared* sh = (Shared*)lpParam;
+
+	hEvent = CreateEvent(NULL, TRUE, FALSE, EVENTO_ENCERRA_TUDO);
+	WaitForSingleObject(hEvent, INFINITE);
+	sh->sair = 1;
+	ResetEvent(hEvent);
+}
 
 DWORD WINAPI threadCom(LPVOID lpParam) {
 
@@ -26,7 +42,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	Taxi sharedMsg;
 	TCHAR buff[12];
 
-	_tprintf(TEXT("Bem-vindo. Introduza a sua matricula: "));
+	_tprintf(TEXT("Olá. Introduza a sua matricula: "));
 	_fgetts(buff, 12, stdin);
 
 	hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMPAR_NOVO_TAXI);
