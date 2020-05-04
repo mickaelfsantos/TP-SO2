@@ -12,6 +12,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
 
+	_tprintf(TEXT("Central de taxis.\n\n"));
 	hThread = CreateThread(NULL, 0, threadCom, NULL, 0, NULL);
 
 	WaitForSingleObject(hThread, INFINITE);
@@ -20,15 +21,14 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 DWORD WINAPI threadCom(LPVOID lpParam) {
 
-
-	HANDLE hMapFile, hEvent;
-	SharedMSG sharedMsg;
-	sharedMsg.nProx = 0;
-	sharedMsg.matricula[0] = '\0';
-	SharedMSG* sM = &sharedMsg;
+	HANDLE hMapFile, hEvent, hMutex;
+	Taxi taxi;
+	taxi.nProx = 0;
+	taxi.matricula[0] = '\0';
+	Taxi* sM = &taxi;
 	TCHAR buff[256];
 
-	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(SharedMSG), TEXT("novoTaxi"));
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Taxi), MEMPAR_NOVO_TAXI);
 
 	if (hMapFile == NULL)
 	{
@@ -36,7 +36,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 		return -1;
 	}
 
-	sM = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedMSG));
+	sM = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
 
 	if (sM == NULL)
 	{
@@ -46,18 +46,33 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 		return -1;
 	}
 
-	CopyMemory(sM, &sharedMsg, sizeof(SharedMSG));
+	hMutex = CreateMutex(NULL, FALSE, MUTEX_NOVO_TAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(sM);
+		CloseHandle(hMapFile);
+		
+		return -1;
+	}
+
+	CopyMemory(sM, &sharedMsg, sizeof(Taxi));
 
 	while (1) {
-		hEvent = CreateEvent(NULL, FALSE, FALSE, TEXT("novoTaxiEvento"));
+		hEvent = CreateEvent(NULL, FALSE, FALSE, EVENTO_NOVO_TAXI);
 		WaitForSingleObject(hEvent, INFINITE);
-		CopyMemory(&sharedMsg, sM, sizeof(SharedMSG)); //mete em sdata o valor que está na memória partilhada em sd
+
+		WaitForSingleObject(hMutex, INFINITE);
+		CopyMemory(&sharedMsg, sM, sizeof(Taxi)); //mete em sdata o valor que está na memória partilhada em sd
 		_tcscpy_s(buff, sizeof(buff), sharedMsg.matricula);
+		ReleaseMutex(hMutex);
 		_tprintf(TEXT("Novo taxi: %s\n"), buff);
+		
 	}
 
 	UnmapViewOfFile(sM);
 
 	CloseHandle(hMapFile);
 	CloseHandle(hEvent);
+	CloseHandle(hMutex);
 }
