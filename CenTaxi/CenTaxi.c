@@ -100,7 +100,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 
 		WaitForSingleObject(hMutex, INFINITE);
 		CopyMemory(&taxi, sM, sizeof(Taxi)); //mete em sdata o valor que está na memória partilhada em sd
-		_tcscpy_s(buff, sizeof(buff), taxi.matricula);
+		_tcscpy_s(buff, sizeof(buff)/sizeof(TCHAR), taxi.matricula);
 		ReleaseMutex(hMutex);
 		_tprintf(TEXT("\n\tNovo taxi: %s"), buff);
 		_tprintf(TEXT("\n\tComando: "));

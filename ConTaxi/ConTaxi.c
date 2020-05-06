@@ -77,7 +77,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 
 	CopyMemory(&sharedMsg, sM, sizeof(Taxi)); //mete em sharedMsg o valor que está na memória partilhada em sd
 	sharedMsg.nProx++;
-	_tcscpy_s(sharedMsg.matricula, sizeof(sharedMsg.matricula), buff);
+	_tcscpy_s(sharedMsg.matricula, sizeof(sharedMsg.matricula)/sizeof(TCHAR), buff);
 	CopyMemory(sM, &sharedMsg, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
 	
 	ReleaseMutex(hMutex); 
