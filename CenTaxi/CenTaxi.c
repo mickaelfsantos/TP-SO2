@@ -39,7 +39,7 @@ void mostraComandos() {
 	_tprintf(TEXT("\n\tencerraTudo: encerra todos os processos"));
 	_tprintf(TEXT("\n\tlistaTaxis: lista taxis e estado atual assim como passageiros em transporte e em espera"));
 	_tprintf(TEXT("\n\tatuaAceitacao: Pausa ou retoma a aceitacao de taxis"));
-	_tprintf(TEXT("\n\tdefineDuracao: Tempo que a CenTaxi aguarda por manifestacoes de interesse em transporte de um passageiro por parte de taxis"));
+	_tprintf(TEXT("\n\tdefineDuracao: Tempo que a CenTaxi aguarda por um taxi manifestar interesse em transporte um passageiro"));
 	_tprintf(TEXT("\n\tsair: encerrar processo"));
 }
 

@@ -1,13 +1,20 @@
 #include "./../CenTaxi/Header.h"
 
+typedef void(_cdecl* dll_log)(TCHAR* text);
+typedef void(_cdecl* dll_register)(TCHAR* text);
+typedef int(_cdecl* dll2_comunica)(TCHAR* buff);
+
 DWORD WINAPI threadCom(LPVOID lpParam);
 DWORD WINAPI threadEncerra(LPVOID lpParam);
 
 int _tmain(int argc, TCHAR* argv[]) {
 
 	HANDLE hThreadCom, hThreadEnc;
+	TCHAR buff[12];
 	Shared sh;
 	sh.sair = 0;
+
+	HINSTANCE hLib, hCom;
 
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -15,11 +22,32 @@ int _tmain(int argc, TCHAR* argv[]) {
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
 
-	hThreadCom = CreateThread(NULL, 0, threadCom, NULL, 0, NULL);
 	hThreadEnc = CreateThread(NULL, 0, threadEncerra, &sh, 0, NULL);
 
-	while (!sh.sair);
-	WaitForSingleObject(hThreadCom, INFINITE);
+	hLib = LoadLibrary(TEXT("E:\\Universidade\\2019-2020\\2 semestre\\SO2\\TP-SO2\\Debug\\SO2_TP_DLL_64.dll"));
+	hCom = LoadLibrary(TEXT("Dll.dll"));
+
+	if (hLib == NULL || hCom == NULL) {
+		_tprintf(TEXT("\nErro a fazer LoadLibrary (%d) - Load da dll"), GetLastError());
+		return -1;
+	}
+
+	dll_log dll_log= GetProcAddress(hLib, "dll_log");
+	dll_register dll_register = GetProcAddress(hLib, "dll_register");
+	dll2_comunica dll2_comunica = GetProcAddress(hCom, "comunica");
+
+	_tprintf(TEXT("Olá. Introduza a sua matricula: "));
+	_fgetts(buff, 12, stdin);
+
+
+	if (dll_log != NULL && dll_register != NULL && dll2_comunica != NULL) {
+		(void)dll_log(TEXT("OLA"));
+		(void)dll_register(TEXT("OLA"), 1);
+		(int)dll2_comunica(buff);
+	}
+	FreeLibrary(hLib);
+	FreeLibrary(hCom);
+
 	WaitForSingleObject(hThreadEnc, INFINITE);
 	return 0;
 }
@@ -33,60 +61,4 @@ DWORD WINAPI threadEncerra(LPVOID lpParam) {
 	WaitForSingleObject(hEvent, INFINITE);
 	sh->sair = 1;
 	ResetEvent(hEvent);
-}
-
-DWORD WINAPI threadCom(LPVOID lpParam) {
-
-	HANDLE hMapFile, hEvent, hMutex;
-	Taxi* sM;
-	Taxi sharedMsg;
-	TCHAR buff[12];
-
-	_tprintf(TEXT("Olá. Introduza a sua matricula: "));
-	_fgetts(buff, 12, stdin);
-
-	hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMPAR_NOVO_TAXI);
-
-	if (hMapFile == NULL)
-	{
-		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
-		return 1;
-	}
-
-	sM = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
-
-	if (sM == NULL)
-	{
-		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
-
-		CloseHandle(hMapFile);
-		return 1;
-	}
-
-	hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_NOVO_TAXI);
-
-	if (hMutex == NULL) {
-		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
-
-		UnmapViewOfFile(sM);
-		CloseHandle(hMapFile);
-		return -1;
-	}
-
-	WaitForSingleObject(hMutex, INFINITE);
-
-	CopyMemory(&sharedMsg, sM, sizeof(Taxi)); //mete em sharedMsg o valor que está na memória partilhada em sd
-	sharedMsg.nProx++;
-	_tcscpy_s(sharedMsg.matricula, sizeof(sharedMsg.matricula)/sizeof(TCHAR), buff);
-	CopyMemory(sM, &sharedMsg, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
-	
-	ReleaseMutex(hMutex); 
-	
-	hEvent = CreateEvent(NULL, TRUE, FALSE, EVENTO_NOVO_TAXI);
-	SetEvent(hEvent);
-	
-	UnmapViewOfFile(sM);
-
-	CloseHandle(hMapFile);
-	CloseHandle(hEvent);
 }
