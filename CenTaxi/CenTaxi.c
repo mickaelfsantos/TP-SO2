@@ -1,13 +1,10 @@
-#include "Header.h"
+#include "CenTaxi.h"
 
-DWORD WINAPI threadCom(LPVOID lpParam);
-void mostraComandos();
-int trataComando(TCHAR comando[]);
 
 int _tmain(int argc, TCHAR* argv[]) {
 
 	HANDLE hThread, hEventThread;
-	Shared *sh;
+	Shared sh;
 	TCHAR comando[256];
 	int op, i;
 #ifdef UNICODE
@@ -16,18 +13,20 @@ int _tmain(int argc, TCHAR* argv[]) {
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
 
-	_tprintf(TEXT("\tCentral de taxis.\n\n"));
-	hThread = CreateThread(NULL, 0, threadCom, NULL, 0, NULL);
+	sh.sair = 0;
+	sh.nTaxis = 0;
+	hThread = CreateThread(NULL, 0, threadCom, &sh, 0, NULL);
 
+	limpaEcra();
 	do{
+		_tprintf(TEXT("\tCentral de taxis.\n\n"));
 		mostraComandos();
 		_tprintf(TEXT("\n\n\tComando: "));
 		_fgetts(comando, 256, stdin);
-		for (i = 0; i != '\n'; i++);
-		comando[i+1] = '\0';
-		op = trataComando(comando);
+		for (i = 0; comando[i] != '\n'; i++);
+		comando[i] = '\0';
+		op = trataComando(comando, &sh);
 	} while (op != -1);
-
 
 	WaitForSingleObject(hThread, INFINITE);
 	return 0;
@@ -43,25 +42,76 @@ void mostraComandos() {
 	_tprintf(TEXT("\n\tsair: encerrar processo"));
 }
 
-int trataComando(TCHAR comando[]) {
+int trataComando(TCHAR comando[], Shared* sh) {
 	if (!_tcscmp(comando, TEXT("sair"))) {
-		return -1;
+		return sair(sh);
 	}
 	else if (!_tcscmp(comando, TEXT("encerraTudo"))) {
-		HANDLE hEvent; 
-		hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, EVENTO_ENCERRA_TUDO);
-		SetEvent(hEvent);
+		encerraTudo();
 	}
+	else if (!_tcscmp(comando, TEXT("listaTaxis"))) {
+		listaTaxis(sh);
+	}
+	return 0;
+}
+
+int sair(Shared* sh) {
+	HANDLE hEvent, hMutex;
+
+	sh->sair = 1;
+	hEvent = CreateEvent(NULL, FALSE, FALSE, EVENTO_NOVO_TAXI);
+	SetEvent(hEvent);
+
+	hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_NOVO_TAXI);
+	ReleaseMutex(hMutex);
+
+	encerraTudo();
+	return -1;
+}
+
+void encerraTudo() {
+	HANDLE hEvent;
+	hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, EVENTO_ENCERRA_TUDO);
+	SetEvent(hEvent);
+}
+
+void listaTaxis(Shared * sh) {
+
+	HANDLE hMutex;
+
+	limpaEcra();
+	hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_NOVO_TAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
+		return;
+	}
+	WaitForSingleObject(hMutex, INFINITE);
+	_getch();
+	if (sh->nTaxis == 0) {
+		_tprintf(TEXT("\n\tSem taxis registados\n"));
+		ReleaseMutex(hMutex);
+		return;
+	}
+	for (int i = 0; i < sh->nTaxis; i++) {
+		_tprintf(TEXT("\n\tTaxi %d: %s (matricula) %d (id)"), i+1, sh->taxis[i].matricula, sh->taxis[i].id);
+	}
+	ReleaseMutex(hMutex);
+	_tprintf(TEXT("\n"));
+}
+
+void limpaEcra() {
+	for(int i=0; i<30; i++)
+		_tprintf(TEXT("\n"));
 }
 
 DWORD WINAPI threadCom(LPVOID lpParam) {
 
-	HANDLE hMapFile, hEvent, hMutex;
+	HANDLE hMapFile, hEvent=NULL, hMutex;
 	Taxi taxi;
-	taxi.nProx = 0;
 	Taxi* sM = &taxi;
 	TCHAR buff[256];
 	Shared* sh = (Shared*)lpParam;
+	int i;
 
 	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Taxi), MEMPAR_NOVO_TAXI);
 
@@ -94,15 +144,23 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	ZeroMemory(taxi.matricula, sizeof(taxi.matricula));
 	CopyMemory(sM, &taxi, sizeof(Taxi));
 
-	while (1) {
+	while (!sh->sair) {
 		hEvent = CreateEvent(NULL, FALSE, FALSE, EVENTO_NOVO_TAXI);
 		WaitForSingleObject(hEvent, INFINITE);
 
 		WaitForSingleObject(hMutex, INFINITE);
-		CopyMemory(&taxi, sM, sizeof(Taxi)); //mete em sdata o valor que está na memória partilhada em sd
-		_tcscpy_s(buff, sizeof(buff)/sizeof(TCHAR), taxi.matricula);
+		if (sh->sair)
+			break;
+		sh->taxis[sh->nTaxis].id = sM->id;
+		_tcscpy_s(sh->taxis[sh->nTaxis].matricula, sizeof(sh->taxis[sh->nTaxis].matricula) / sizeof(TCHAR), sM->matricula);
+		for (i = 0; sh->taxis[sh->nTaxis].matricula[i] != '\n'; i++);
+		sh->taxis[sh->nTaxis].matricula[i] = '\0';
+		sh->nTaxis++;
 		ReleaseMutex(hMutex);
-		_tprintf(TEXT("\n\tNovo taxi: %s"), buff);
+		if (sh->nTaxis == LIMITE_TAXIS) {
+			_tprintf(TEXT("\n\tA central ficou cheia!"));
+		}
+		_tprintf(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), sh->taxis[sh->nTaxis-1].matricula, sh->taxis[sh->nTaxis-1].id);
 		_tprintf(TEXT("\n\tComando: "));
 	}
 

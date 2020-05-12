@@ -9,12 +9,11 @@
 extern "C" {          // we need to export the C interface
 #endif
 
-	__declspec(dllexport) int __cdecl comunica(TCHAR* matricula)
+	__declspec(dllexport) int __cdecl comunica(Taxi taxi)
 	{
 		HANDLE hMapFile, hEvent, hMutex;
 		Taxi* sM;
 		Taxi sharedMsg;
-
 
 		hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMPAR_NOVO_TAXI);
 
@@ -46,9 +45,9 @@ extern "C" {          // we need to export the C interface
 
 		WaitForSingleObject(hMutex, INFINITE);
 
-		CopyMemory(&sharedMsg, sM, sizeof(Taxi)); //mete em sharedMsg o valor que está na memória partilhada em sd
-		sharedMsg.nProx++;
-		_tcscpy_s(sharedMsg.matricula, sizeof(sharedMsg.matricula) / sizeof(TCHAR), matricula);
+		//CopyMemory(&sharedMsg, sM, sizeof(Taxi)); //mete em sharedMsg o valor que está na memória partilhada em sd
+		sharedMsg.id = taxi.id;
+		_tcscpy_s(sharedMsg.matricula, sizeof(sharedMsg.matricula) / sizeof(TCHAR), taxi.matricula);
 		CopyMemory(sM, &sharedMsg, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
 
 		ReleaseMutex(hMutex);

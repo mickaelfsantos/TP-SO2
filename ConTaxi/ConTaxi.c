@@ -2,7 +2,7 @@
 
 typedef void(_cdecl* dll_log)(TCHAR* text);
 typedef void(_cdecl* dll_register)(TCHAR* text);
-typedef int(_cdecl* dll2_comunica)(TCHAR* buff);
+typedef int(_cdecl* dll2_comunica)(Taxi taxi);
 
 DWORD WINAPI threadCom(LPVOID lpParam);
 DWORD WINAPI threadEncerra(LPVOID lpParam);
@@ -11,6 +11,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	HANDLE hThreadCom, hThreadEnc;
 	TCHAR buff[12];
+	Taxi taxi;
 	Shared sh;
 	sh.sair = 0;
 
@@ -37,13 +38,15 @@ int _tmain(int argc, TCHAR* argv[]) {
 	dll2_comunica dll2_comunica = GetProcAddress(hCom, "comunica");
 
 	_tprintf(TEXT("Olá. Introduza a sua matricula: "));
-	_fgetts(buff, 12, stdin);
-
+	_fgetts(taxi.matricula, sizeof(taxi.matricula)/sizeof(TCHAR), stdin);
+	_tprintf(TEXT("\nIntroduza a posição onde começa (x, y): "));
+	_tscanf_s(TEXT("%d, %d"), &taxi.x, &taxi.y);
+	taxi.id = GetCurrentProcessId();
 
 	if (dll_log != NULL && dll_register != NULL && dll2_comunica != NULL) {
 		(void)dll_log(TEXT("OLA"));
 		(void)dll_register(TEXT("OLA"), 1);
-		(int)dll2_comunica(buff);
+		(int)dll2_comunica(taxi);
 	}
 	FreeLibrary(hLib);
 	FreeLibrary(hCom);
