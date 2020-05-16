@@ -1,12 +1,10 @@
 #include "CenTaxi.h"
 
-
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThread, hEventThread;
+	HANDLE hThread, hEventThread, hThreadComandos;
 	Shared sh;
-	TCHAR comando[256];
-	int op, i;
+	Mapa m;
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
 	_setmode(_fileno(stdout), _O_WTEXT);
@@ -15,19 +13,13 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	sh.sair = 0;
 	sh.nTaxis = 0;
+	hThreadComandos = CreateThread(NULL, 0, threadComandos, &sh, 0, NULL);
 	hThread = CreateThread(NULL, 0, threadCom, &sh, 0, NULL);
 
-	limpaEcra();
-	do{
-		_tprintf(TEXT("\tCentral de taxis.\n\n"));
-		mostraComandos();
-		_tprintf(TEXT("\n\n\tComando: "));
-		_fgetts(comando, 256, stdin);
-		for (i = 0; comando[i] != '\n'; i++);
-		comando[i] = '\0';
-		op = trataComando(comando, &sh);
-	} while (op != -1);
+	carregaMapa(&m);
+	mostraMapa(&m);
 
+	WaitForSingleObject(hThreadComandos, INFINITE);
 	WaitForSingleObject(hThread, INFINITE);
 	return 0;
 }
@@ -40,6 +32,54 @@ void mostraComandos() {
 	_tprintf(TEXT("\n\tatuaAceitacao: Pausa ou retoma a aceitacao de taxis"));
 	_tprintf(TEXT("\n\tdefineDuracao: Tempo que a CenTaxi aguarda por um taxi manifestar interesse em transporte um passageiro"));
 	_tprintf(TEXT("\n\tsair: encerrar processo"));
+}
+
+void carregaMapa(Mapa* m) {
+
+	FILE* file=NULL;
+	int c;
+	
+	errno_t err = fopen_s(&file, ".\\..\\f.txt", "r");
+
+	if (file == NULL) {
+		_tprintf(TEXT("%d"), err);
+		return NULL;
+	}
+
+	c = fgetc(file);
+	for (int i = 0, j=0; feof(file) == 0; i++)
+	{
+		if ((char)c == '_') {
+			m->cell[j][i].estrada = 1;
+		}
+		else if ((char)c == TEXT('X')) {
+			m->cell[j][i].estrada = 0;
+		}
+		else {
+			j++;
+			i = 0;
+		}
+		c = fgetc(file);
+	}
+
+	fclose(file);
+
+}
+
+
+void mostraMapa(Mapa* m) {
+	_tprintf(TEXT("\n"));
+	for (int i = 0; i<10; i++) {
+		for (int j = 0; j<10; j++) {
+			if (m->cell[i][j].estrada) {
+				_tprintf(TEXT("_"));
+			}
+			else {
+				_tprintf(TEXT("X"));
+			}
+		}
+		_tprintf(TEXT("\n"));
+	}
 }
 
 int trataComando(TCHAR comando[], Shared* sh) {
@@ -86,7 +126,6 @@ void listaTaxis(Shared * sh) {
 		return;
 	}
 	WaitForSingleObject(hMutex, INFINITE);
-	_getch();
 	if (sh->nTaxis == 0) {
 		_tprintf(TEXT("\n\tSem taxis registados\n"));
 		ReleaseMutex(hMutex);
@@ -102,6 +141,24 @@ void listaTaxis(Shared * sh) {
 void limpaEcra() {
 	for(int i=0; i<30; i++)
 		_tprintf(TEXT("\n"));
+}
+
+DWORD WINAPI threadComandos(LPVOID lpParam) {
+	TCHAR comando[256];
+	int i, op;
+	Shared* sh = (Shared*)lpParam;
+
+	limpaEcra();
+	do {
+		_tprintf(TEXT("\tCentral de taxis.\n\n"));
+		mostraComandos();
+		_tprintf(TEXT("\n\n\tComando: "));
+		_fgetts(comando, 256, stdin);
+		for (i = 0; comando[i] != '\n'; i++);
+		comando[i] = '\0';
+		op = trataComando(comando, sh);
+	} while (op != -1);
+	return 0;
 }
 
 DWORD WINAPI threadCom(LPVOID lpParam) {
@@ -153,8 +210,6 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 			break;
 		sh->taxis[sh->nTaxis].id = sM->id;
 		_tcscpy_s(sh->taxis[sh->nTaxis].matricula, sizeof(sh->taxis[sh->nTaxis].matricula) / sizeof(TCHAR), sM->matricula);
-		for (i = 0; sh->taxis[sh->nTaxis].matricula[i] != '\n'; i++);
-		sh->taxis[sh->nTaxis].matricula[i] = '\0';
 		sh->nTaxis++;
 		ReleaseMutex(hMutex);
 		if (sh->nTaxis == LIMITE_TAXIS) {

@@ -1,8 +1,5 @@
 #include "./../CenTaxi/Header.h"
 
-typedef void(_cdecl* dll_log)(TCHAR* text);
-typedef void(_cdecl* dll_register)(TCHAR* text);
-typedef int(_cdecl* dll2_comunica)(Taxi taxi);
 
 DWORD WINAPI threadCom(LPVOID lpParam);
 DWORD WINAPI threadEncerra(LPVOID lpParam);
@@ -12,6 +9,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	HANDLE hThreadCom, hThreadEnc;
 	TCHAR buff[12];
 	Taxi taxi;
+	int i;
 	Shared sh;
 	sh.sair = 0;
 
@@ -25,7 +23,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	hThreadEnc = CreateThread(NULL, 0, threadEncerra, &sh, 0, NULL);
 
-	hLib = LoadLibrary(TEXT("E:\\Universidade\\2019-2020\\2 semestre\\SO2\\TP-SO2\\Debug\\SO2_TP_DLL_64.dll"));
+	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
 	hCom = LoadLibrary(TEXT("Dll.dll"));
 
 	if (hLib == NULL || hCom == NULL) {
@@ -33,20 +31,22 @@ int _tmain(int argc, TCHAR* argv[]) {
 		return -1;
 	}
 
-	dll_log dll_log= GetProcAddress(hLib, "dll_log");
-	dll_register dll_register = GetProcAddress(hLib, "dll_register");
-	dll2_comunica dll2_comunica = GetProcAddress(hCom, "comunica");
+	dll_log dll_logV = (dll_log) GetProcAddress(hLib, "dll_log");
+	dll_register dll_registerV = (dll_register) GetProcAddress(hLib, "dll_register");
+	dll2_comunica dll2_comunicaV = (dll2_comunica) GetProcAddress(hCom, "comunica");
 
-	_tprintf(TEXT("Olá. Introduza a sua matricula: "));
+	taxi.id = GetCurrentProcessId();
+	_tprintf(TEXT("Olá. O seu ID é: %d"), taxi.id);
+	_tprintf(TEXT("\nIntroduza a sua matricula: "));
 	_fgetts(taxi.matricula, sizeof(taxi.matricula)/sizeof(TCHAR), stdin);
 	_tprintf(TEXT("\nIntroduza a posição onde começa (x, y): "));
-	_tscanf_s(TEXT("%d, %d"), &taxi.x, &taxi.y);
+	_tscanf_s(TEXT("%d, %d"), &taxi.x, &taxi.y); 
+	for (i = 0; taxi.matricula[i] != '\n'; i++);
+	taxi.matricula[i] = '\0';
 	taxi.id = GetCurrentProcessId();
 
-	if (dll_log != NULL && dll_register != NULL && dll2_comunica != NULL) {
-		(void)dll_log(TEXT("OLA"));
-		(void)dll_register(TEXT("OLA"), 1);
-		(int)dll2_comunica(taxi);
+	if (dll2_comunicaV != NULL) {
+		(int)dll2_comunicaV(taxi);
 	}
 	FreeLibrary(hLib);
 	FreeLibrary(hCom);
