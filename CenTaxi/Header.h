@@ -9,7 +9,10 @@
 
 #define EVENTO_NOVO_TAXI TEXT("novoTaxiEvento")
 #define MEMPAR_NOVO_TAXI TEXT("novoTaxiMemPar")
-#define MUTEX_NOVO_TAXI TEXT("novoTaxiMutex")
+#define MUTEX_NOVO_TAXI_LEI TEXT("novoTaxiMutexLei")
+#define MUTEX_NOVO_TAXI_RES TEXT("novoTaxiMutexRes")
+#define MUTEX_NOVO_TAXI_ESC TEXT("novoTaxiMutexEsc")
+#define MUTEX_TAXI TEXT("novoTaxiMutex")
 #define EVENTO_ENCERRA_TUDO TEXT("encerraTudo")
 #define MATRICULA_BUFFER 12
 #define LIMITE_TAXIS 5
@@ -18,6 +21,7 @@ typedef struct {
 	int id;
 	int x;
 	int y;
+	int aceite; //0-não foi aceite (carro ja existe)  // 1-aceite
 	TCHAR matricula[MATRICULA_BUFFER];
 }Taxi;
 
@@ -25,14 +29,13 @@ typedef void(_cdecl* dll_log)(TCHAR* text);
 typedef void(_cdecl* dll_register)(TCHAR* text);
 typedef int(__cdecl* dll2_comunica)(Taxi taxi);
 
-typedef struct {
-	int estrada; //0 - edificio 1 - estrada
-	//Passageiro passageiro;
-	Taxi taxi;
-}Cell;
 
 typedef struct {
-	Cell cell[50][50];
+	int ** estrada; //0 - edificio 1 - estrada
+	//Passageiro passageiro;
+	Taxi taxi;
+	int altura;
+	int largura;
 }Mapa;
 
 typedef struct {
