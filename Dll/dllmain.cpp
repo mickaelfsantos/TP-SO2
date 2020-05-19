@@ -9,11 +9,12 @@
 extern "C" {          // we need to export the C interface
 #endif
 
-	__declspec(dllexport) int __cdecl comunica(Taxi taxi)
+	__declspec(dllexport) int __cdecl comunica(Taxi taxi, Mapa *mapa)
 	{
-		HANDLE hMapFile, hEvent, hSemLei, hSemEsc, hSemRes;
+		HANDLE hMapFile, hSemLei, hSemEsc, hSemRes, hMapFileM, hEvent;
 		Taxi* sM;
 		Taxi sharedMsg;
+		Mapa* m;
 
 		hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMPAR_NOVO_TAXI);
 
@@ -33,9 +34,9 @@ extern "C" {          // we need to export the C interface
 			return -1;
 		}
 
-		hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_NOVO_TAXI_LEI);
-		if (hSemLei == NULL) {
-			_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
+		hSemEsc = CreateSemaphore(NULL, 1, 1, MUTEX_NOVO_TAXI_ESC);
+		if (hSemEsc == NULL) {
+			_tprintf(TEXT("Erro ao criar semaforo de escrita (%d).\n"), GetLastError());
 
 			UnmapViewOfFile(sM);
 			CloseHandle(hMapFile);
@@ -43,9 +44,9 @@ extern "C" {          // we need to export the C interface
 			return -1;
 		}
 
-		hSemEsc = CreateSemaphore(NULL, 1, 1, MUTEX_NOVO_TAXI_ESC);
-		if (hSemEsc == NULL) {
-			_tprintf(TEXT("Erro ao criar semaforo de escrita (%d).\n"), GetLastError());
+		hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_NOVO_TAXI_LEI);
+		if (hSemLei == NULL) {
+			_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
 
 			UnmapViewOfFile(sM);
 			CloseHandle(hMapFile);
@@ -67,16 +68,14 @@ extern "C" {          // we need to export the C interface
 
 		//CopyMemory(&sharedMsg, sM, sizeof(Taxi)); //mete em sharedMsg o valor que está na memória partilhada em sd
 		sharedMsg.id = taxi.id;
+		sharedMsg.x = taxi.x;
+		sharedMsg.y = taxi.y;
 		_tcscpy_s(sharedMsg.matricula, sizeof(sharedMsg.matricula) / sizeof(TCHAR), taxi.matricula);
 		CopyMemory(sM, &sharedMsg, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
 		ReleaseSemaphore(hSemLei, 1, NULL);
 
-		hEvent = CreateEvent(NULL, TRUE, FALSE, EVENTO_NOVO_TAXI);
-		SetEvent(hEvent);
-
 		WaitForSingleObject(hSemRes, INFINITE);
 		CopyMemory(&sharedMsg, sM, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
-		ReleaseSemaphore(hSemRes, 1, NULL);
 
 		CloseHandle(hSemEsc);
 		CloseHandle(hSemLei);
@@ -85,8 +84,41 @@ extern "C" {          // we need to export the C interface
 		UnmapViewOfFile(sM);
 
 		CloseHandle(hMapFile);
-		CloseHandle(hEvent);
 		if (sharedMsg.aceite == 1) {
+
+			hMapFileM = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Mapa), INFORMA_MAPA);
+
+			if (hMapFileM == NULL)
+			{
+				_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+				return -1;
+			}
+
+			m = (Mapa*)MapViewOfFile(hMapFileM, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Mapa));
+
+			if (m == NULL)
+			{
+				_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+				CloseHandle(hMapFileM);
+				return -1;
+			}
+
+			hEvent = CreateEvent(NULL, TRUE, FALSE, MUTEX_MAPA);
+			if (hEvent == NULL) {
+				_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
+
+				UnmapViewOfFile(m);
+				CloseHandle(hMapFileM);
+
+				return -1;
+			}
+			CopyMemory(mapa, m, sizeof(Mapa));
+			SetEvent(hEvent);
+
+			UnmapViewOfFile(m);
+			CloseHandle(hMapFileM);
+			CloseHandle(hEvent);
 			return 1;
 		}
 		return 0;

@@ -9,6 +9,8 @@
 
 #define EVENTO_NOVO_TAXI TEXT("novoTaxiEvento")
 #define MEMPAR_NOVO_TAXI TEXT("novoTaxiMemPar")
+#define INFORMA_MAPA TEXT("Mapa")
+#define MUTEX_MAPA TEXT("MapaMutex")
 #define MUTEX_NOVO_TAXI_LEI TEXT("novoTaxiMutexLei")
 #define MUTEX_NOVO_TAXI_RES TEXT("novoTaxiMutexRes")
 #define MUTEX_NOVO_TAXI_ESC TEXT("novoTaxiMutexEsc")
@@ -25,24 +27,24 @@ typedef struct {
 	TCHAR matricula[MATRICULA_BUFFER];
 }Taxi;
 
-typedef void(_cdecl* dll_log)(TCHAR* text);
-typedef void(_cdecl* dll_register)(TCHAR* text);
-typedef int(__cdecl* dll2_comunica)(Taxi taxi);
-
-
 typedef struct {
-	int ** estrada; //0 - edificio 1 - estrada
+	int** estrada; //0 - edificio 1 - estrada
 	//Passageiro passageiro;
-	Taxi taxi;
+	Taxi taxis[LIMITE_TAXIS];
 	int altura;
 	int largura;
+	int nTaxis;
+	int aceita; //0 - não aceita   1 - aceita 
+	int sair;
 }Mapa;
 
-typedef struct {
+typedef void(_cdecl* dll_log)(TCHAR* text);
+typedef void(_cdecl* dll_register)(TCHAR* text);
+typedef int(__cdecl* dll2_comunica)(Taxi taxi, Mapa* mapa);
+
+/*typedef struct {
 	int aceita; //0 - nao aceita 1 - aceita
 	int sair;
 	int nTaxis;
 	Taxi taxis[LIMITE_TAXIS];
-}Shared;
-
-
+}Shared;*/

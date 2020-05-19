@@ -8,6 +8,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	HANDLE hThreadCom, hThreadEnc, hThreadInf;
 	TCHAR buff[12];
 	Taxi taxi;
+	Mapa mapa;
 	int i;
 
 	HINSTANCE hLib, hCom;
@@ -36,9 +37,23 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	if (dll2_comunicaV != NULL) {
 		WaitForSingleObject(hThreadInf, INFINITE);
-		taxi.aceite = (int)(int)dll2_comunicaV(taxi);
-		if (!taxi.aceite) {
-			_tprintf(TEXT("ADEUS"));
+		taxi.aceite = (int)(int)dll2_comunicaV(taxi, &mapa);
+		if (taxi.aceite == 1) {
+			_tprintf(TEXT("\n"));
+			for (int i = 0; i < mapa.altura; i++) {
+				for (int j = 0; j < mapa.largura; j++) {
+					if (mapa.estrada[i][j] == 1) {
+						_tprintf(TEXT("_"));
+					}
+					else if (mapa.estrada[i][j] == 2) {
+						_tprintf(TEXT("C"));
+					}
+					else {
+						_tprintf(TEXT("X"));
+					}
+				}
+				_tprintf(TEXT("\n"));
+			}
 		}
 	}
 	FreeLibrary(hLib);
