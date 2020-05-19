@@ -124,6 +124,52 @@ extern "C" {          // we need to export the C interface
 		return 0;
 	}
 
+	
+	__declspec(dllexport) int __cdecl comunicaSaida(Taxi taxi) {
+		HANDLE hMapFile, hEvent, hMutex;
+		Taxi* sM;
+
+		hMapFile = OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, MEMPAR_SAI_TAXI);
+
+		if (hMapFile == NULL)
+		{
+			_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+			return 1;
+		}
+
+		sM =(Taxi*) MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
+
+		if (sM == NULL)
+		{
+			_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+			CloseHandle(hMapFile);
+			return 1;
+		}
+
+		hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_TAXI_SAI);
+
+		if (hMutex == NULL) {
+			_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
+
+			UnmapViewOfFile(sM);
+			CloseHandle(hMapFile);
+			return -1;
+		}
+
+		WaitForSingleObject(hMutex, INFINITE);
+		CopyMemory(sM, &taxi, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
+		ReleaseMutex(hMutex);
+
+		hEvent = CreateEvent(NULL, TRUE, FALSE, EVENTO_SAI_TAXI);
+		SetEvent(hEvent);
+
+		UnmapViewOfFile(sM);
+
+		CloseHandle(hMapFile);
+		CloseHandle(hEvent);
+		return 0;
+	}
 #ifdef __cplusplus
 }
 #endif

@@ -33,13 +33,17 @@ int _tmain(int argc, TCHAR* argv[]) {
 	dll_log dll_logV = (dll_log) GetProcAddress(hLib, "dll_log");
 	dll_register dll_registerV = (dll_register) GetProcAddress(hLib, "dll_register");
 	dll2_comunica dll2_comunicaV = (dll2_comunica) GetProcAddress(hCom, "comunica");
+	dll2_comunicaSaida dll2_comunicaSV = (dll2_comunicaSaida)GetProcAddress(hCom, "comunicaSaida");
 
 
 	if (dll2_comunicaV != NULL) {
 		WaitForSingleObject(hThreadInf, INFINITE);
 		taxi.aceite = (int)(int)dll2_comunicaV(taxi, &mapa);
-		if (taxi.aceite == 1) {
-			_tprintf(TEXT("\n"));
+		if (taxi.aceite != 1) {
+			FreeLibrary(hLib);
+			FreeLibrary(hCom);
+			return 0;
+			/*_tprintf(TEXT("\n"));
 			for (int i = 0; i < mapa.altura; i++) {
 				for (int j = 0; j < mapa.largura; j++) {
 					if (mapa.estrada[i][j] == 1) {
@@ -53,12 +57,13 @@ int _tmain(int argc, TCHAR* argv[]) {
 					}
 				}
 				_tprintf(TEXT("\n"));
-			}
+			}*/
 		}
 	}
+	_getch();
+	(int)dll2_comunicaSV(taxi);
 	FreeLibrary(hLib);
 	FreeLibrary(hCom);
-	_getch();
 	return 0;
 }
 

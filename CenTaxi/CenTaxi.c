@@ -2,7 +2,7 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThread, hEventThread, hThreadComandos;
+	HANDLE hThread, hThreadSai, hEventThread, hThreadComandos;
 	Mapa m;
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -15,12 +15,28 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	m.sair = 0;
 	m.nTaxis = 0;
+	if (argc == 2) {
+		m.maxTaxis = atoi(argv[1]);
+		m.taxis = malloc(m.maxTaxis * sizeof(int));
+	}
+	else if (argc == 3) {
+		m.maxTaxis = atoi(argv[1]);
+		m.taxis = malloc(m.maxTaxis * sizeof(int));
+		m.maxPass = atoi(argv[2]);
+		//m.passageiros = malloc(i * sizeof(int));
+	}
+	else {
+		m.taxis = malloc(LIMITE_TAXIS * sizeof(int));
+		//m.passageiros = malloc(LIMITE_PASSAGEIROS * sizeof(int));
+	}
 	hThread = CreateThread(NULL, 0, threadCom, &m, 0, NULL);
+	hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
 	hThreadComandos = CreateThread(NULL, 0, threadComandos, &m, 0, NULL);
 
 
 	WaitForSingleObject(hThreadComandos, INFINITE);
 	WaitForSingleObject(hThread, INFINITE);
+	WaitForSingleObject(hThreadSai, INFINITE);
 	return 0;
 }
 
@@ -32,7 +48,6 @@ void mostraComandos() {
 	_tprintf(TEXT("\n\tatuaAceitacao: Pausa ou retoma a aceitacao de taxis"));
 	_tprintf(TEXT("\n\tdefineDuracao: Tempo que a CenTaxi aguarda por um taxi manifestar interesse em transporte um passageiro"));
 	_tprintf(TEXT("\n\tmostraMapa: Mostra o mapa atualizado"));
-	_tprintf(TEXT("\n\tsair: encerrar processo"));
 }
 
 void carregaMapa(Mapa* m) {
@@ -128,11 +143,8 @@ void mostraMapa(Mapa* m) {
 }
 
 int trataComando(TCHAR comando[], Mapa* m) {
-	if (!_tcscmp(comando, TEXT("sair"))) {
+	if (!_tcscmp(comando, TEXT("encerraTudo"))) {
 		return sair(m);
-	}
-	else if (!_tcscmp(comando, TEXT("encerraTudo"))) {
-		encerraTudo();
 	}
 	else if (!_tcscmp(comando, TEXT("listaTaxis"))) {
 		listaTaxis(m);
@@ -144,7 +156,7 @@ int trataComando(TCHAR comando[], Mapa* m) {
 }
 
 int sair(Mapa* m) {
-	HANDLE hEvent, hSem;
+	HANDLE hMutex, hSem, hEvent;
 
 	m->sair = 1;
 	
@@ -155,14 +167,18 @@ int sair(Mapa* m) {
 	}
 	ReleaseSemaphore(hSem, 1, NULL);
 
-	encerraTudo();
-	return -1;
-}
+	hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_TAXI_SAI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
+		return -1;
+	}
 
-void encerraTudo() {
-	HANDLE hEvent;
-	hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, EVENTO_ENCERRA_TUDO);
+	hEvent = CreateEvent(NULL, FALSE, FALSE, EVENTO_SAI_TAXI);
 	SetEvent(hEvent);
+	SetEvent(hMutex);
+	CloseHandle(hSem);
+	CloseHandle(hMutex);
+	return -1;
 }
 
 void listaTaxis(Mapa * m) {
@@ -170,7 +186,7 @@ void listaTaxis(Mapa * m) {
 	HANDLE hMutex;
 
 	limpaEcra();
-	hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_TAXI);
+	hMutex = CreateMutex(NULL, FALSE, MUTEX_TAXI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
 		return;
@@ -186,6 +202,7 @@ void listaTaxis(Mapa * m) {
 	}
 	ReleaseMutex(hMutex);
 	_tprintf(TEXT("\n"));
+	CloseHandle(hMutex);
 }
 
 void limpaEcra() {
@@ -291,7 +308,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 		_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), sM->matricula);
 		pos = m->nTaxis;
 
-		if (m->nTaxis != LIMITE_TAXIS) {
+		if (m->nTaxis != m->maxTaxis) {
 			for (int j = 0; j < pos; j++) {
 				if (!_tcscmp(aux.matricula, m->taxis[j].matricula)) {
 					aux.aceite = 0;
@@ -330,6 +347,86 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	CloseHandle(hSemLei);
 	CloseHandle(hSemRes);
 	CloseHandle(hMutex);
+}
+
+DWORD WINAPI threadSaiTaxi(LPVOID lpParam) {
+
+	HANDLE hMapFile, hMutex = NULL, hEvent = NULL, hMutexS;
+	Taxi* sM;
+	Mapa* m = (Mapa*)lpParam;
+	Taxi t;
+
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Taxi), MEMPAR_SAI_TAXI);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+
+	sM = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
+
+	if (sM == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+
+	hMutexS = CreateMutex(NULL, FALSE, MUTEX_TAXI_SAI);
+	if (hMutexS == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(sM);
+		CloseHandle(hMapFile);
+
+		return -1;
+	}
+	hMutex = CreateMutex(NULL, FALSE, MUTEX_TAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(sM);
+		CloseHandle(hMapFile);
+		CloseHandle(hMutexS);
+		return -1;
+	}
+	while (!m->sair) {
+		hEvent = CreateEvent(NULL, FALSE, FALSE, EVENTO_SAI_TAXI);
+		WaitForSingleObject(hEvent, INFINITE);
+
+		WaitForSingleObject(hMutexS, INFINITE);
+
+		if (m->sair)
+			break;
+
+		for (int i = 0; i < m->nTaxis; i++) {
+			if (!_tcscmp(m->taxis[i].matricula, sM->matricula)) {
+				_tprintf(TEXT("\n\tTaxi com a matricula %s e ID %d acabou de sair!"), m->taxis[i].matricula, m->taxis[i].id);
+				_tprintf(TEXT("\n\tComando: "));
+				WaitForSingleObject(hMutex, INFINITE);
+				for (int j = i; j < m->nTaxis-1; j++) {
+					m->taxis[j].aceite = m->taxis[j + 1].aceite;
+					m->taxis[j].id = m->taxis[j + 1].id;
+					m->taxis[j].x = m->taxis[j + 1].x;
+					m->taxis[j].y = m->taxis[j + 1].y;
+					_tcscpy_s(m->taxis[j].matricula, sizeof(m->taxis[j].matricula), m->taxis[j+1].matricula);
+				}
+				m->nTaxis--;
+				ReleaseMutex(hMutex);
+				break;
+			}
+		}
+
+		ReleaseMutex(hMutexS);
+	}
+
+	UnmapViewOfFile(sM);
+
+	CloseHandle(hMapFile);
+	CloseHandle(hEvent);
+	CloseHandle(hMutexS);
 }
 
 void informaMapaAoTaxi(Mapa * mapa) {
