@@ -1,19 +1,32 @@
-#include "Header.h"
+#include ".\..\Dll\dll.h"
 
+typedef struct {
+	int larguraMapa;
+	int alturaMapa;
+	int maxTaxis;
+	int maxPass;
+	int nTaxis;
+	int* mapa;
+	Taxi* taxis;
+	int sair;
+}Centaxi;
+
+
+DWORD WINAPI threadCriaTaxis(LPVOID lpParam);
 
 void mostraComandos();
 
-void carregaMapa(Mapa* m);
+DWORD WINAPI carregaMapa(LPVOID lpParam);
 
-void mostraMapa(Mapa* m);
+void mostraCentaxi(Centaxi* m);
 
-int trataComando(TCHAR comando[], Mapa* m);
+int trataComando(TCHAR comando[], Centaxi* m);
 
-int sair(Mapa* m);
+int sair(Centaxi* m);
 
 void encerraTudo();
 
-void listaTaxis(Mapa* m);
+void listaTaxis(Centaxi* m);
 
 void limpaEcra();
 
@@ -23,4 +36,4 @@ DWORD WINAPI threadCom(LPVOID lpParam);
 
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
 
-void informaMapaAoTaxi(Mapa* mapa);
+void informaCentaxiAoTaxi(Centaxi* Centaxi);

@@ -2,41 +2,39 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThread, hThreadSai, hEventThread, hThreadComandos;
-	Mapa m;
+	HANDLE hThreadCriaTaxis, hThreadMapa, hThreadComunicacao, hThreadSai, hEventThread, hThreadComandos;
+	Centaxi m;
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
 	_setmode(_fileno(stdout), _O_WTEXT);
 	_setmode(_fileno(stderr), _O_WTEXT);
 #endif
-	
-	carregaMapa(&m);
-	mostraMapa(&m);
 
+	hThreadMapa = CreateThread(NULL, 0, carregaMapa, &m, 0, NULL);
+
+	hThreadCriaTaxis = CreateThread(NULL, 0, threadCriaTaxis, &m, 0, NULL);
+	
 	m.sair = 0;
 	m.nTaxis = 0;
 	if (argc == 2) {
 		m.maxTaxis = atoi(argv[1]);
-		m.taxis = malloc(m.maxTaxis * sizeof(int));
 	}
 	else if (argc == 3) {
 		m.maxTaxis = atoi(argv[1]);
-		m.taxis = malloc(m.maxTaxis * sizeof(int));
 		m.maxPass = atoi(argv[2]);
-		//m.passageiros = malloc(i * sizeof(int));
 	}
 	else {
-		m.taxis = malloc(LIMITE_TAXIS * sizeof(int));
-		//m.passageiros = malloc(LIMITE_PASSAGEIROS * sizeof(int));
+		m.maxTaxis = LIMITE_TAXIS;
+		m.maxPass = LIMITE_PASS;
 	}
-	hThread = CreateThread(NULL, 0, threadCom, &m, 0, NULL);
-	hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
+	hThreadComunicacao = CreateThread(NULL, 0, threadCom, &m, 0, NULL);
 	hThreadComandos = CreateThread(NULL, 0, threadComandos, &m, 0, NULL);
+	//hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
 
 
-	WaitForSingleObject(hThreadComandos, INFINITE);
-	WaitForSingleObject(hThread, INFINITE);
-	WaitForSingleObject(hThreadSai, INFINITE);
+	WaitForSingleObject(hThreadCriaTaxis, INFINITE);
+	WaitForSingleObject(hThreadComunicacao, INFINITE);
+	_getch();
 	return 0;
 }
 
@@ -50,88 +48,14 @@ void mostraComandos() {
 	_tprintf(TEXT("\n\tmostraMapa: Mostra o mapa atualizado"));
 }
 
-void carregaMapa(Mapa* m) {
-
-	FILE* file=NULL;
-	int c, altura, i, largura, j;
-	
-	errno_t err = fopen_s(&file, ".\\..\\f.txt", "r");
-
-	if (file == NULL) {
-		_tprintf(TEXT("%d"), err);
-		return NULL;
-	}
-
-	c = fgetc(file);
-	for (i = 0; feof(file) == 0 && (char)c != TEXT('\n'); i++)
-	{
-		c = fgetc(file);
-	}
-	m->largura = i;
-
-	fclose(file);
-
-	err = fopen_s(&file, ".\\..\\f.txt", "r");
-
-	if (file == NULL) {
-		_tprintf(TEXT("%d"), err);
-		return NULL;
-	}
-
-	c = fgetc(file);
-	for (i = 0, j=0; feof(file) == 0; i++)
-	{
-		if ((char)c == TEXT('\n')) {
-			j++;
-		}
-		c = fgetc(file);
-	}
-	fclose(file);
-
-	m->altura = j+1;
-
-
-	m->estrada = (int**)malloc(m->largura* sizeof(int*));
-	for (i = 0; i < m->largura; i++) {
-		m->estrada[i] = (int *)malloc(sizeof(int) * m->altura);
-	}
-	
-
-	err = fopen_s(&file, ".\\..\\f.txt", "r");
-
-	if (file == NULL) {
-		_tprintf(TEXT("%d"), err);
-		return NULL;
-	}
-
-	c = fgetc(file);
-	for (int i = 0, j = 0; feof(file) == 0; j++)
-	{
-		if ((char)c == TEXT('_')) {
-			m->estrada[i][j] = 1;
-		}
-		else if ((char)c == TEXT('X')) {
-			m->estrada[i][j] = 0;
-		}
-		else {
-			j = -1;
-			i++;
-		}
-		c = fgetc(file);
-	}
-
-	fclose(file);
-
-}
-
-void mostraMapa(Mapa* m) {
+void mostraMapa(Centaxi* m) {
 	_tprintf(TEXT("\n"));
-	for (int i = 0; i< m->altura; i++) {
-		for (int j = 0; j< m->largura; j++) {
-			if (m->estrada[i][j] == 1) {
+	for (int i = 0, k=0; i< m->alturaMapa; i++) {
+		for (int j = 0; j< m->larguraMapa; j++, k++) {
+			if (m->mapa[k] == 1) {
 				_tprintf(TEXT("_"));
 			}
-			else if(m->estrada[i][j] == 2){
+			else if(m->mapa[k] == 2){
 				_tprintf(TEXT("C"));
 			}
 			else {
@@ -142,7 +66,7 @@ void mostraMapa(Mapa* m) {
 	}
 }
 
-int trataComando(TCHAR comando[], Mapa* m) {
+int trataComando(TCHAR comando[], Centaxi* m) {
 	if (!_tcscmp(comando, TEXT("encerraTudo"))) {
 		return sair(m);
 	}
@@ -155,7 +79,7 @@ int trataComando(TCHAR comando[], Mapa* m) {
 	return 0;
 }
 
-int sair(Mapa* m) {
+int sair(Centaxi* m) {
 	HANDLE hMutex, hSem, hEvent;
 
 	m->sair = 1;
@@ -181,12 +105,12 @@ int sair(Mapa* m) {
 	return -1;
 }
 
-void listaTaxis(Mapa * m) {
+void listaTaxis(Centaxi* m) {
 
 	HANDLE hMutex;
 
 	limpaEcra();
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_TAXI);
+	hMutex = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
 		return;
@@ -210,10 +134,124 @@ void limpaEcra() {
 		_tprintf(TEXT("\n"));
 }
 
+DWORD WINAPI carregaMapa(LPVOID lpParam) {
+
+	FILE* file = NULL;
+	int c, altura, i, largura, j;
+	HANDLE hMapFile;
+	Centaxi* m = (Centaxi*)lpParam;
+	int* mapa;
+
+	errno_t err = fopen_s(&file, ".\\..\\f.txt", "r");
+
+	if (file == NULL) {
+		_tprintf(TEXT("%d"), err);
+		return NULL;
+	}
+
+	c = fgetc(file);
+	for (i = 0; feof(file) == 0 && (char)c != TEXT('\n'); i++)
+	{
+		c = fgetc(file);
+	}
+	m->larguraMapa = i;
+
+	fclose(file);
+
+	err = fopen_s(&file, ".\\..\\f.txt", "r");
+
+	if (file == NULL) {
+		_tprintf(TEXT("%d"), err);
+		return NULL;
+	}
+
+	c = fgetc(file);
+	for (i = 0, j = 0; feof(file) == 0; i++)
+	{
+		if ((char)c == TEXT('\n')) {
+			j++;
+		}
+		c = fgetc(file);
+	}
+	fclose(file);
+
+	m->alturaMapa = j + 1;
+
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(int) * m->alturaMapa * m->larguraMapa, MEMPAR_MAPA);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+
+	mapa = (int*)MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(int) * m->alturaMapa * m->larguraMapa);
+
+	if (mapa == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+
+	err = fopen_s(&file, ".\\..\\f.txt", "r");
+
+	if (file == NULL) {
+		_tprintf(TEXT("%d"), err);
+		return NULL;
+	}
+
+	c = fgetc(file);
+	for (i = 0; feof(file) == 0; i++)
+	{
+		if ((char)c == TEXT('_')) {
+			mapa[i] = 1;
+		}
+		else if ((char)c == TEXT('X')) {
+			mapa[i] = 0;
+		}
+		else {
+			i--;
+		}
+		c = fgetc(file);
+	}
+
+	fclose(file);
+	m->mapa = mapa;
+}
+
+DWORD WINAPI threadCriaTaxis(LPVOID lpParam) {
+	HANDLE hMapFile;
+	Centaxi* m = (Centaxi*)lpParam;
+	Taxi* t;
+
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, m->maxTaxis * sizeof(Taxi), MEMPAR_TAXIS);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+
+	t = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi) * m->maxTaxis);
+
+	if (t == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+	ZeroMemory(t, sizeof(Taxi) * m->maxTaxis);
+
+	m->taxis = t;
+}
+
 DWORD WINAPI threadComandos(LPVOID lpParam) {
 	TCHAR comando[256];
 	int i, op;
-	Mapa* m = (Mapa*)lpParam;
+	Centaxi* m = (Centaxi*)lpParam;
 
 	limpaEcra();
 	do {
@@ -230,15 +268,13 @@ DWORD WINAPI threadComandos(LPVOID lpParam) {
 
 DWORD WINAPI threadCom(LPVOID lpParam) {
 
-	HANDLE hMapFile, hSemLei, hSemEsc, hSemRes, hMutex;
-	Taxi taxi;
+	HANDLE hMapFile, hSemLei, hSemEsc, hSemRes, hSemAtualizaEsc, hSemAtualizaLei, hMutex;
 	Taxi aux;
-	Taxi* sM = &taxi;
-	TCHAR buff[256];
-	Mapa* m = (Mapa*)lpParam;
-	int i, pos;
+	Taxi* t;
+	Centaxi* m = (Centaxi*)lpParam;
+	int pos;
 
-	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Taxi), MEMPAR_NOVO_TAXI);
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Taxi), MEMPAR_TAXI_NOVO);
 
 	if (hMapFile == NULL)
 	{
@@ -246,9 +282,9 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 		return -1;
 	}
 
-	sM = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
+	t = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
 
-	if (sM == NULL)
+	if (t == NULL)
 	{
 		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
 
@@ -260,7 +296,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	if (hSemEsc == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de escrita (%d).\n"), GetLastError());
 
-		UnmapViewOfFile(sM);
+		UnmapViewOfFile(t);
 		CloseHandle(hMapFile);
 
 		return -1;
@@ -270,7 +306,8 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	if (hSemLei == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
 
-		UnmapViewOfFile(sM);
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
 		CloseHandle(hMapFile);
 		
 		return -1;
@@ -280,36 +317,63 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	if (hSemRes == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de resposta (%d).\n"), GetLastError());
 
-		UnmapViewOfFile(sM);
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hSemLei);
 		CloseHandle(hMapFile);
 
 		return -1;
 	}
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_TAXI);
+
+	hSemAtualizaEsc = CreateSemaphore(NULL, 1, 1, MUTEX_PODE_ATUALIZAR_ARRAY_ESC); 
+	if (hSemAtualizaEsc == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hSemLei);
+		CloseHandle(hSemRes);
+		CloseHandle(hMapFile);
+
+		return -1;
+	}
+
+	hSemAtualizaLei = CreateSemaphore(NULL, 0, 1, MUTEX_PODE_ATUALIZAR_ARRAY_LEI);
+	if (hSemAtualizaLei == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hSemLei);
+		CloseHandle(hSemRes);
+		CloseHandle(hSemAtualizaEsc);
+		CloseHandle(hMapFile);
+
+		return -1;
+	}
+
+	hMutex = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
 	if (hMutex == NULL) {
-		_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
-
-		UnmapViewOfFile(sM);
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hSemLei);
+		CloseHandle(hSemRes);
 		CloseHandle(hMapFile);
-
+		CloseHandle(hSemAtualizaEsc);
+		CloseHandle(hSemAtualizaLei);
 		return -1;
 	}
-
-	ZeroMemory(taxi.matricula, sizeof(taxi.matricula));
-	CopyMemory(sM, &taxi, sizeof(Taxi));
-
 	while (!m->sair) {
 		WaitForSingleObject(hSemLei, INFINITE);
 		if (m->sair)
 			break;
-		aux.id = sM->id;
-		aux.x = sM->x;
-		aux.y = sM->y;
-		_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), sM->matricula);
-		pos = m->nTaxis;
-
+		aux.id = t->id;
+		aux.x = t->x;
+		aux.y = t->y;
+		_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
+		
 		if (m->nTaxis != m->maxTaxis) {
-			for (int j = 0; j < pos; j++) {
+			for (int j = 0; j < m->nTaxis; j++) {
 				if (!_tcscmp(aux.matricula, m->taxis[j].matricula)) {
 					aux.aceite = 0;
 					break;
@@ -321,34 +385,37 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 		}
 		if (aux.aceite != 0) {
 			aux.aceite = 1;
+			aux.larguraMapa = m->larguraMapa;
+			aux.alturaMapa = m->alturaMapa;
 		}
-		CopyMemory(sM, &aux, sizeof(Taxi));
+		CopyMemory(t, &aux, sizeof(Taxi));
 		ReleaseSemaphore(hSemRes, 1, NULL);
 		if (aux.aceite) {
-			informaMapaAoTaxi(m);
+			//WaitForSingleObject(hSemAtualizaEsc, INFINITE);
 			WaitForSingleObject(hMutex, INFINITE);
 			m->taxis[m->nTaxis].id = aux.id;
 			m->taxis[m->nTaxis].x = aux.x;
 			m->taxis[m->nTaxis].y = aux.y;
-			m->estrada[aux.x][aux.y] = 2;
 			_tcscpy_s(m->taxis[m->nTaxis].matricula, sizeof(m->taxis[m->nTaxis].matricula) / sizeof(TCHAR), aux.matricula);
 			m->nTaxis++;
 			_tprintf(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
 			_tprintf(TEXT("\n\tComando: "));
 			ReleaseMutex(hMutex);
+			//ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
 		}
 		ReleaseSemaphore(hSemEsc, 1, NULL);
 	}
 
-	UnmapViewOfFile(sM);
+	UnmapViewOfFile(t);
 
 	CloseHandle(hMapFile);
 	CloseHandle(hSemEsc);
 	CloseHandle(hSemLei);
 	CloseHandle(hSemRes);
-	CloseHandle(hMutex);
+	CloseHandle(hSemAtualizaEsc);
+	CloseHandle(hSemAtualizaLei);
 }
-
+/*
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam) {
 
 	HANDLE hMapFile, hMutex = NULL, hEvent = NULL, hMutexS;
@@ -429,7 +496,7 @@ DWORD WINAPI threadSaiTaxi(LPVOID lpParam) {
 	CloseHandle(hMutexS);
 }
 
-void informaMapaAoTaxi(Mapa * mapa) {
+void informaMapaAoTaxi(Centaxi* mapa) {
 	HANDLE hMapFile, hEvent;
 	Mapa* m;
 
@@ -467,4 +534,4 @@ void informaMapaAoTaxi(Mapa * mapa) {
 	UnmapViewOfFile(m);
 	CloseHandle(hEvent);
 	CloseHandle(hMapFile);
-}
+}*/

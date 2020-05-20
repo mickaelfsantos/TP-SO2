@@ -1,14 +1,10 @@
-#include "./../CenTaxi/Header.h"
-
-DWORD WINAPI threadEncerra(LPVOID lpParam);
-DWORD WINAPI threadInformacao(LPVOID lpParam);
+#include "Contaxi.h"
 
 int _tmain(int argc, TCHAR* argv[]) {
 
 	HANDLE hThreadCom, hThreadEnc, hThreadInf;
-	TCHAR buff[12];
 	Taxi taxi;
-	Mapa mapa;
+	Contaxi c;
 	int i;
 
 	HINSTANCE hLib, hCom;
@@ -30,40 +26,47 @@ int _tmain(int argc, TCHAR* argv[]) {
 		return -1;
 	}
 
-	dll_log dll_logV = (dll_log) GetProcAddress(hLib, "dll_log");
-	dll_register dll_registerV = (dll_register) GetProcAddress(hLib, "dll_register");
-	dll2_comunica dll2_comunicaV = (dll2_comunica) GetProcAddress(hCom, "comunica");
+	dll_log dll_logV = (dll_log)GetProcAddress(hLib, "dll_log");
+	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
+	dll2_comunica dll2_comunicaV = (dll2_comunica)GetProcAddress(hCom, "comunica");
 	dll2_comunicaSaida dll2_comunicaSV = (dll2_comunicaSaida)GetProcAddress(hCom, "comunicaSaida");
+	dll2_carregaMapa dll2_carregaM = (dll2_carregaMapa)GetProcAddress(hCom, "carregaMapa");
 
 
-	if (dll2_comunicaV != NULL) {
-		WaitForSingleObject(hThreadInf, INFINITE);
-		taxi.aceite = (int)(int)dll2_comunicaV(taxi, &mapa);
-		if (taxi.aceite != 1) {
-			FreeLibrary(hLib);
-			FreeLibrary(hCom);
-			return 0;
-			/*_tprintf(TEXT("\n"));
-			for (int i = 0; i < mapa.altura; i++) {
-				for (int j = 0; j < mapa.largura; j++) {
-					if (mapa.estrada[i][j] == 1) {
-						_tprintf(TEXT("_"));
-					}
-					else if (mapa.estrada[i][j] == 2) {
-						_tprintf(TEXT("C"));
-					}
-					else {
-						_tprintf(TEXT("X"));
-					}
-				}
-				_tprintf(TEXT("\n"));
-			}*/
+	if (dll2_comunicaV == NULL) {
+		_tprintf(TEXT("\nErro no ponteiro para a DLL."));
+		return 0;
+	}
+	
+	WaitForSingleObject(hThreadInf, INFINITE);
+	taxi = dll2_comunicaV(taxi);
+	if (taxi.aceite != 1) {
+		_tprintf(TEXT("\nNão foi aceite por parte da central"));
+		FreeLibrary(hLib);
+		FreeLibrary(hCom);
+		return 0;
+	}
+
+	c.alturaMapa = taxi.alturaMapa;
+	c.larguraMapa = taxi.larguraMapa;
+	c.mapa = NULL;
+	c = dll2_carregaM(c);
+
+	for (int i = 0, k = 0; i < c.alturaMapa; i++) {
+		for (int j = 0; j < c.larguraMapa; j++, k++) {
+			if (c.mapa[k] == 1) {
+				_tprintf(TEXT("_"));
+			}
+			else if (c.mapa[k] == 2) {
+				_tprintf(TEXT("C"));
+			}
+			else {
+				_tprintf(TEXT("X"));
+			}
 		}
+		_tprintf(TEXT("\n"));
 	}
 	_getch();
-	(int)dll2_comunicaSV(taxi);
-	FreeLibrary(hLib);
-	FreeLibrary(hCom);
 	return 0;
 }
 
