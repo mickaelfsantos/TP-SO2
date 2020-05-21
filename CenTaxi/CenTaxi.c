@@ -27,7 +27,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 		m.maxTaxis = LIMITE_TAXIS;
 		m.maxPass = LIMITE_PASS;
 	}
-	hThreadComunicacao = CreateThread(NULL, 0, threadCom, &m, 0, NULL);
+	hThreadComunicacao = CreateThread(NULL, 0, threadComunicaTaxis, &m, 0, NULL);
 	hThreadComandos = CreateThread(NULL, 0, threadComandos, &m, 0, NULL);
 	//hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
 
@@ -266,7 +266,7 @@ DWORD WINAPI threadComandos(LPVOID lpParam) {
 	return 0;
 }
 
-DWORD WINAPI threadCom(LPVOID lpParam) {
+DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 
 	HANDLE hMapFile, hSemLei, hSemEsc, hSemRes, hSemAtualizaEsc, hSemAtualizaLei, hMutex;
 	Taxi aux;
@@ -367,9 +367,11 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 		WaitForSingleObject(hSemLei, INFINITE);
 		if (m->sair)
 			break;
+
 		aux.id = t->id;
 		aux.x = t->x;
 		aux.y = t->y;
+		aux.aceite = 1;
 		_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
 		
 		if (m->nTaxis != m->maxTaxis) {
@@ -384,9 +386,24 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 			aux.aceite = 0;
 		}
 		if (aux.aceite != 0) {
-			aux.aceite = 1;
-			aux.larguraMapa = m->larguraMapa;
-			aux.alturaMapa = m->alturaMapa;
+			for (int i = 0, k = 0; i < m->alturaMapa; i++) {
+				for (int j = 0; j < m->larguraMapa; j++, k++) {
+					if (i == aux.x && j == aux.y && m->mapa[k] == 0) {
+						aux.aceite = 0;
+						break;
+					}
+					else {
+						aux.aceite = 1;
+					}
+				}
+				if (aux.aceite == 0) {
+					break;
+				}
+			}
+			if(aux.aceite == 1){
+				aux.larguraMapa = m->larguraMapa;
+				aux.alturaMapa = m->alturaMapa;
+			}
 		}
 		CopyMemory(t, &aux, sizeof(Taxi));
 		ReleaseSemaphore(hSemRes, 1, NULL);
@@ -415,6 +432,7 @@ DWORD WINAPI threadCom(LPVOID lpParam) {
 	CloseHandle(hSemAtualizaEsc);
 	CloseHandle(hSemAtualizaLei);
 }
+
 /*
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam) {
 

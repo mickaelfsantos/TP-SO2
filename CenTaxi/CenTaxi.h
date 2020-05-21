@@ -6,7 +6,7 @@ typedef struct {
 	int maxTaxis;
 	int maxPass;
 	int nTaxis;
-	int* mapa;
+	int* mapa; //0 edificio 1 estada
 	Taxi* taxis;
 	int sair;
 }Centaxi;
@@ -32,7 +32,7 @@ void limpaEcra();
 
 DWORD WINAPI threadComandos(LPVOID lpParam);
 
-DWORD WINAPI threadCom(LPVOID lpParam);
+DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
 
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
 

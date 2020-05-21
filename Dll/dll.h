@@ -6,10 +6,16 @@
 #include <io.h>
 #include <string.h>
 #include <wchar.h>
+#include <stdlib.h>
+#include <time.h>
+#include <malloc.h>
 
 //vars
 #define LIMITE_TAXIS 5
 #define LIMITE_PASS 5
+
+#define WAIT_ONE_SECOND -10000000LL
+
 
 #define MEMPAR_MAPA TEXT("MemoriaMapa")
 #define MEMPAR_TAXIS TEXT("MemoriaTaxis")
@@ -39,11 +45,15 @@
 //structs
 typedef struct {
 	int id;
-	int x;
-	int y;
+	float x;
+	float y;
+	float xA;
+	float yA;
 	int larguraMapa;
 	int alturaMapa;
 	int aceite; //0-não foi aceite (carro ja existe)  // 1-aceite
+	int atualizaMovimentacao; //0-carro novo // 1-atualiza carro
+	float velocidade;
 	TCHAR matricula[MATRICULA_BUFFER];
 }Taxi;
 
@@ -51,6 +61,9 @@ typedef struct {
 	int alturaMapa;
 	int larguraMapa;
 	int* mapa;
+	Taxi* taxi;
+	int** m;
+	int sair;
 } Contaxi;
 
 
