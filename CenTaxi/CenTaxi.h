@@ -37,3 +37,5 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
 
 void informaCentaxiAoTaxi(Centaxi* Centaxi);
+
+DWORD WINAPI informaMapa(LPVOID lpParam);

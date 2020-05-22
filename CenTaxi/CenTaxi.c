@@ -2,7 +2,7 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCriaTaxis, hThreadMapa, hThreadComunicacao, hThreadSai, hEventThread, hThreadComandos;
+	HANDLE hThreadCriaTaxis, hThreadInformaMapa, hThreadMapa, hThreadComunicacao, hThreadSai, hEventThread, hThreadComandos;
 	Centaxi m;
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -12,7 +12,10 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	hThreadMapa = CreateThread(NULL, 0, carregaMapa, &m, 0, NULL);
 
+	WaitForSingleObject(hThreadMapa, INFINITE);
 	hThreadCriaTaxis = CreateThread(NULL, 0, threadCriaTaxis, &m, 0, NULL);
+	hThreadInformaMapa = CreateThread(NULL, 0, informaMapa, &m, 0, NULL);
+
 	
 	m.sair = 0;
 	m.nTaxis = 0;
@@ -32,6 +35,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	//hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
 
 
+	WaitForSingleObject(hThreadInformaMapa, INFINITE);
 	WaitForSingleObject(hThreadCriaTaxis, INFINITE);
 	WaitForSingleObject(hThreadComunicacao, INFINITE);
 	_getch();
@@ -132,6 +136,56 @@ void listaTaxis(Centaxi* m) {
 void limpaEcra() {
 	for(int i=0; i<30; i++)
 		_tprintf(TEXT("\n"));
+}
+
+DWORD WINAPI informaMapa(LPVOID lpParam) {
+
+	HANDLE hMapFile, hSem;
+	Mapinfo* m;
+	Mapinfo mapa;
+	Centaxi* c = (Centaxi*)lpParam;
+
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Mapinfo), MEMPAR_INFORMA_MAPA);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+
+	m = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Mapinfo));
+
+	if (m == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+	
+	hSem = CreateSemaphore(NULL, 0, 1, SEM_PODE_FECHAR_INFORMA_MAPA);
+	if (hSem == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(m);
+		CloseHandle(hMapFile);
+
+		return -1;
+	}
+
+	mapa.alturaMapa = c->alturaMapa;
+	mapa.larguraMapa = c->larguraMapa;
+	mapa.maxPass = c->maxPass;
+	mapa.maxTaxis = c->maxTaxis;
+
+	CopyMemory(m, &mapa, sizeof(Mapinfo));
+
+	WaitForSingleObject(hSem, INFINITE);
+
+	UnmapViewOfFile(m);
+	CloseHandle(hMapFile);
+	CloseHandle(hSem);
+	return;
 }
 
 DWORD WINAPI carregaMapa(LPVOID lpParam) {
@@ -367,60 +421,83 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 		WaitForSingleObject(hSemLei, INFINITE);
 		if (m->sair)
 			break;
+		aux.atualizaMovimentacao = t->atualizaMovimentacao;
+		if (aux.atualizaMovimentacao == 0) {
+			aux.id = t->id;
+			aux.x = t->x;
+			aux.y = t->y;
+			aux.aceite = 1;
+			_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
 
-		aux.id = t->id;
-		aux.x = t->x;
-		aux.y = t->y;
-		aux.aceite = 1;
-		_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
-		
-		if (m->nTaxis != m->maxTaxis) {
-			for (int j = 0; j < m->nTaxis; j++) {
-				if (!_tcscmp(aux.matricula, m->taxis[j].matricula)) {
-					aux.aceite = 0;
-					break;
-				}
-			}
-		}
-		else {
-			aux.aceite = 0;
-		}
-		if (aux.aceite != 0) {
-			for (int i = 0, k = 0; i < m->alturaMapa; i++) {
-				for (int j = 0; j < m->larguraMapa; j++, k++) {
-					if (i == aux.x && j == aux.y && m->mapa[k] == 0) {
+			if (m->nTaxis != m->maxTaxis) {
+				for (int j = 0; j < m->nTaxis; j++) {
+					if (!_tcscmp(aux.matricula, m->taxis[j].matricula)) {
 						aux.aceite = 0;
 						break;
 					}
-					else {
-						aux.aceite = 1;
+				}
+			}
+			else {
+				aux.aceite = 0;
+			}
+			if (aux.aceite != 0) {
+				for (int i = 0, k = 0; i < m->alturaMapa; i++) {
+					for (int j = 0; j < m->larguraMapa; j++, k++) {
+						if (i == aux.x && j == aux.y && m->mapa[k] == 0) {
+							aux.aceite = 0;
+							break;
+						}
+						else {
+							aux.aceite = 1;
+						}
+					}
+					if (aux.aceite == 0) {
+						break;
 					}
 				}
-				if (aux.aceite == 0) {
+				if (aux.aceite == 1) {
+					aux.larguraMapa = m->larguraMapa;
+					aux.alturaMapa = m->alturaMapa;
+					aux.atualizaMovimentacao = 1;
+				}
+			}
+			CopyMemory(t, &aux, sizeof(Taxi));
+			ReleaseSemaphore(hSemRes, 1, NULL);
+			if (aux.aceite) {
+				WaitForSingleObject(hSemAtualizaEsc, INFINITE);
+				WaitForSingleObject(hMutex, INFINITE);
+				m->taxis[m->nTaxis].id = aux.id;
+				m->taxis[m->nTaxis].x = aux.x;
+				m->taxis[m->nTaxis].y = aux.y;
+				_tcscpy_s(m->taxis[m->nTaxis].matricula, sizeof(m->taxis[m->nTaxis].matricula) / sizeof(TCHAR), aux.matricula);
+				m->nTaxis++;
+				_tprintf(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
+				_tprintf(TEXT("\n\tComando: "));
+				ReleaseMutex(hMutex);
+				ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
+			}
+			ReleaseSemaphore(hSemEsc, 1, NULL);
+		}
+		else {
+			_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
+			WaitForSingleObject(hSemAtualizaEsc, INFINITE);
+			WaitForSingleObject(hMutex, INFINITE);
+			for (pos = 0; pos < m->nTaxis; pos++) {
+				if (!_tcscmp(aux.matricula, m->taxis[pos].matricula)) {
+					aux = *t;
 					break;
 				}
 			}
-			if(aux.aceite == 1){
-				aux.larguraMapa = m->larguraMapa;
-				aux.alturaMapa = m->alturaMapa;
-			}
-		}
-		CopyMemory(t, &aux, sizeof(Taxi));
-		ReleaseSemaphore(hSemRes, 1, NULL);
-		if (aux.aceite) {
-			//WaitForSingleObject(hSemAtualizaEsc, INFINITE);
-			WaitForSingleObject(hMutex, INFINITE);
-			m->taxis[m->nTaxis].id = aux.id;
-			m->taxis[m->nTaxis].x = aux.x;
-			m->taxis[m->nTaxis].y = aux.y;
-			_tcscpy_s(m->taxis[m->nTaxis].matricula, sizeof(m->taxis[m->nTaxis].matricula) / sizeof(TCHAR), aux.matricula);
-			m->nTaxis++;
-			_tprintf(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
-			_tprintf(TEXT("\n\tComando: "));
+			m->taxis[pos].x = aux.x;
+			m->taxis[pos].y = aux.y;
+			m->taxis[pos].yA = aux.yA;
+			m->taxis[pos].xA = aux.xA;
+			m->taxis[pos].velocidade = aux.velocidade;
 			ReleaseMutex(hMutex);
-			//ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
+			ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
+			ReleaseSemaphore(hSemRes, 1, NULL);
+			ReleaseSemaphore(hSemEsc, 1, NULL);
 		}
-		ReleaseSemaphore(hSemEsc, 1, NULL);
 	}
 
 	UnmapViewOfFile(t);

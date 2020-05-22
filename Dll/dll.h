@@ -14,10 +14,16 @@
 #define LIMITE_TAXIS 5
 #define LIMITE_PASS 5
 
-#define WAIT_ONE_SECOND -10000000LL
+
+#define WAIT_VELOCIDADE_DOIS -5000000LL
+#define WAIT_VELOCIDADE_UM -10000000LL
+#define WAIT_VELOCIDADE_UM_E_MEIO -6666666LL
+#define WAIT_VELOCIDADE_MEIO -20000000LL
+
 
 
 #define MEMPAR_MAPA TEXT("MemoriaMapa")
+#define MEMPAR_INFORMA_MAPA TEXT("InformaMapa")
 #define MEMPAR_TAXIS TEXT("MemoriaTaxis")
 #define MEMPAR_TAXI_NOVO TEXT("MemoriaTaxiNovo")
 #define MEMPAR_PASS TEXT("MemoriaPassageiros")
@@ -27,6 +33,7 @@
 #define MUTEX_NOVO_TAXI_ESC TEXT("novoTaxiMutexEsc")
 #define MUTEX_PODE_ATUALIZAR_ARRAY_ESC TEXT("podeEscrever")
 #define MUTEX_PODE_ATUALIZAR_ARRAY_LEI TEXT("podeLer")
+#define SEM_PODE_FECHAR_INFORMA_MAPA TEXT("podeFecharInformaMapa")
 #define ATUALIZA_ARRAY_TAXIS TEXT("podeAtualizarArrayTaxis")
 
 
@@ -45,12 +52,13 @@
 //structs
 typedef struct {
 	int id;
-	float x;
-	float y;
-	float xA;
-	float yA;
+	int x;
+	int y;
+	int xA;
+	int yA;
 	int larguraMapa;
 	int alturaMapa;
+	int ultimaDirecao; //0-cima 1-dir 2-esq 3-baixo
 	int aceite; //0-não foi aceite (carro ja existe)  // 1-aceite
 	int atualizaMovimentacao; //0-carro novo // 1-atualiza carro
 	float velocidade;
@@ -65,6 +73,17 @@ typedef struct {
 	int** m;
 	int sair;
 } Contaxi;
+
+typedef struct {
+	int alturaMapa;
+	int larguraMapa;
+	int maxTaxis;
+	int maxPass;
+	int sair;
+	int* mapa;
+	int** mapaB;
+	Taxi* taxis;
+}Mapinfo;
 
 
 typedef void(_cdecl* dll_log)(TCHAR* text);
