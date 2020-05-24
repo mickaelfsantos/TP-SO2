@@ -9,7 +9,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 #endif
 
 	Mapinfo m;
-	HANDLE hThreadTaxis;
+	HANDLE hThreadTaxis, hThreadEncerra;
 
 	m = obtemDados();
 	m = carregaMapa(m);
@@ -25,15 +25,16 @@ int _tmain(int argc, TCHAR* argv[]) {
 		}
 	}
 
+	hThreadEncerra = CreateThread(NULL, 0, threadEncerra, &m, 0, NULL);
 	hThreadTaxis = CreateThread(NULL, 0, atualizaTaxis, &m, 0, NULL);
 
-	_getch();
+	WaitForSingleObject(hThreadTaxis, INFINITE);
 	return 0;
 }
 
 DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 	Mapinfo* m = (Mapinfo*)lpParam;
-	HANDLE hSemLei, hSemEsc, hMapFile;
+	HANDLE hSemLei, hSemEsc, hMapFile, hMutex;
 	Taxi* t;
 
 	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, m->maxTaxis * sizeof(Taxi), MEMPAR_TAXIS);
@@ -74,9 +75,21 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 
 		return -1;
 	}
+	hMutex = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
+	if (hMutex == NULL) {
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hMapFile);
+		CloseHandle(hSemLei);
+		return -1;
+	}
 	while (m->sair!= 1) {
 		WaitForSingleObject(hSemLei, INFINITE);
+		if (m->sair == 1)
+			break;
+		WaitForSingleObject(hMutex, INFINITE);
 		m->taxis = t;
+		ReleaseMutex(hMutex);
 		ReleaseSemaphore(hSemEsc, 1, NULL);
 		system("cls");
 		for (int i = 0; i < m->maxTaxis; i++) {
@@ -104,9 +117,7 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 			}
 		}
 	}
-	_getch();
 }
-
 
 Mapinfo obtemDados() {
 	
@@ -177,4 +188,21 @@ Mapinfo carregaMapa(Mapinfo m) {
 
 	m.mapa = mapa;
 	return m;
+}
+
+DWORD WINAPI threadEncerra(LPVOID lpParam) {
+	HANDLE hEvent, hSemLei;
+	Mapinfo* m = (Mapinfo*)lpParam;
+
+	hEvent = CreateEvent(NULL, TRUE, FALSE, EVENTO_ENCERRA_TUDO);
+	WaitForSingleObject(hEvent, INFINITE);
+	ResetEvent(hEvent);
+	m->sair = 1;
+
+	hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_PODE_ATUALIZAR_ARRAY_LEI);
+	if (hSemLei == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
+		return;
+	}
+	ReleaseSemaphore(hSemLei, 1, NULL);
 }

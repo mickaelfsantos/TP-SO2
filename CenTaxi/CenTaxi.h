@@ -6,36 +6,29 @@ typedef struct {
 	int maxTaxis;
 	int maxPass;
 	int nTaxis;
+	int aceitaTaxis;
 	int* mapa; //0 edificio 1 estada
 	Taxi* taxis;
 	int sair;
 }Centaxi;
 
+typedef struct {
+	//Passageiro passageiros[LIMITE_PASS];
+	int r;
+	int w;
+}BufferCircular;
 
-DWORD WINAPI threadCriaTaxis(LPVOID lpParam);
 
 void mostraComandos();
-
-DWORD WINAPI carregaMapa(LPVOID lpParam);
-
-void mostraCentaxi(Centaxi* m);
-
+void atuaAceitacao(Centaxi* m);
+void mostraMapa(Centaxi* m);
 int trataComando(TCHAR comando[], Centaxi* m);
-
 int sair(Centaxi* m);
-
-void encerraTudo();
-
 void listaTaxis(Centaxi* m);
-
 void limpaEcra();
-
-DWORD WINAPI threadComandos(LPVOID lpParam);
-
-DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
-
-DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
-
-void informaCentaxiAoTaxi(Centaxi* Centaxi);
-
 DWORD WINAPI informaMapa(LPVOID lpParam);
+DWORD WINAPI carregaMapa(LPVOID lpParam);
+DWORD WINAPI threadCriaTaxis(LPVOID lpParam);
+DWORD WINAPI threadComandos(LPVOID lpParam);
+DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
+DWORD WINAPI threadSaiTaxi(LPVOID lpParam);

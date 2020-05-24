@@ -58,7 +58,6 @@ typedef struct {
 	int yA;
 	int larguraMapa;
 	int alturaMapa;
-	int ultimaDirecao; //0-cima 1-dir 2-esq 3-baixo
 	int aceite; //0-não foi aceite (carro ja existe)  // 1-aceite
 	int atualizaMovimentacao; //0-carro novo // 1-atualiza carro
 	float velocidade;

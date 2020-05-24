@@ -78,49 +78,6 @@ extern "C" {          // we need to export the C interface
 		return taxi;
 	}
 
-	/*
-	__declspec(dllexport) void __cdecl comunicaAlteracao(Taxi taxi)
-	{
-		hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Taxi), MEMPAR_TAXI_NOVO);
-
-		if (hMapFile == NULL)
-		{
-			_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
-			return -1;
-		}
-
-		t = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Taxi));
-
-		if (t == NULL)
-		{
-			_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
-
-			CloseHandle(hMapFile);
-			return -1;
-		}
-
-		hSemEsc = CreateSemaphore(NULL, 1, 1, MUTEX_NOVO_TAXI_ESC);
-		if (hSemEsc == NULL) {
-			_tprintf(TEXT("Erro ao criar semaforo de escrita (%d).\n"), GetLastError());
-
-			UnmapViewOfFile(t);
-			CloseHandle(hMapFile);
-
-			return -1;
-		}
-
-		hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_NOVO_TAXI_LEI);
-		if (hSemLei == NULL) {
-			_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
-
-			UnmapViewOfFile(t);
-			CloseHandle(hSemEsc);
-			CloseHandle(hMapFile);
-
-			return -1;
-		}
-	}
-	*/
 	__declspec(dllexport) Contaxi __cdecl carregaMapa(Contaxi c) {
 
 		HANDLE hMapFile;
@@ -148,7 +105,6 @@ extern "C" {          // we need to export the C interface
 		return c;
 	}
 
-	/*
 	__declspec(dllexport) int __cdecl comunicaSaida(Taxi taxi) {
 		HANDLE hMapFile, hEvent, hMutex;
 		Taxi* sM;
@@ -182,7 +138,7 @@ extern "C" {          // we need to export the C interface
 		}
 
 		WaitForSingleObject(hMutex, INFINITE);
-		CopyMemory(sM, &taxi, sizeof(Taxi));	//atualiza o valor, metendo-o em sd novamente
+		CopyMemory(sM, &taxi, sizeof(Taxi));
 		ReleaseMutex(hMutex);
 
 		hEvent = CreateEvent(NULL, TRUE, FALSE, EVENTO_SAI_TAXI);
@@ -194,7 +150,6 @@ extern "C" {          // we need to export the C interface
 		CloseHandle(hEvent);
 		return 0;
 	}
-	*/
 #ifdef __cplusplus
 }
 #endif
