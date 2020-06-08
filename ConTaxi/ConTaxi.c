@@ -70,7 +70,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	}
 	c.taxi = &taxi;
 
-	hWaitableTimer =  CreateWaitableTimer(NULL, TRUE, WAITABLETIMER);
+	hWaitableTimer =  CreateWaitableTimer(NULL, TRUE, taxi.matricula);
 	dll_registerV(WAITABLETIMER, 5);
 	if (hWaitableTimer ==NULL){
 		printf("Erro ao criar waitable timer (%d)\n", GetLastError());

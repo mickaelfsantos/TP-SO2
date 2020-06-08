@@ -80,7 +80,6 @@ typedef struct {
 	int maxPass;
 	int sair;
 	int* mapa;
-	int** mapaB;
 	Taxi* taxis;
 }Mapinfo;
 

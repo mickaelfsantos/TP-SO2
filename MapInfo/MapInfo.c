@@ -14,7 +14,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	m = obtemDados();
 	m = carregaMapa(m);
 	
-	m.mapaB = (int*)malloc(sizeof(int*) * m.alturaMapa);
+	/*m.mapaB = (int*)malloc(sizeof(int*) * m.alturaMapa);
 	for (int i = 0; i < m.larguraMapa; i++) {
 		m.mapaB[i] = malloc(sizeof(int) * m.larguraMapa);
 	}
@@ -23,7 +23,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 		for (int j = 0; j < m.larguraMapa; j++, k++) {
 			m.mapaB[i][j] = m.mapa[k];
 		}
-	}
+	}*/
 
 	hThreadEncerra = CreateThread(NULL, 0, threadEncerra, &m, 0, NULL);
 	hThreadTaxis = CreateThread(NULL, 0, atualizaTaxis, &m, 0, NULL);
@@ -94,15 +94,18 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 		system("cls");
 		for (int i = 0; i < m->maxTaxis; i++) {
 			if (m->taxis[i].id > 0) {
-				m->mapaB[m->taxis[i].x][m->taxis[i].y] = 2;
+				*(m->mapa + m->taxis[i].x * m->larguraMapa + m->taxis[i].y) = 2;
+				//m->mapaB[m->taxis[i].x][m->taxis[i].y] = 2;
 			}
 		}
 		for (int i = 0; i < m->alturaMapa; i++) {
 			for (int j = 0; j < m->larguraMapa; j++) {
-				if (m->mapaB[i][j] == 1) {
+				if(*(m->mapa + i * m->larguraMapa + j) == 1){
+				//if (m->mapaB[i][j] == 1) {
 					_tprintf(TEXT("_"));
 				}
-				else if (m->mapaB[i][j] == 2) {
+				else if(*(m->mapa + i*m->larguraMapa + j) == 2){
+				//else if (m->mapaB[i][j] == 2) {
 					_tprintf(TEXT("C"));
 				}
 				else {
@@ -113,7 +116,8 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 		}
 		for (int i = 0; i < m->maxTaxis; i++) {
 			if (m->taxis[i].id > 0) {
-				m->mapaB[m->taxis[i].x][m->taxis[i].y] = 1;
+				*(m->mapa + m->taxis[i].x * m->larguraMapa + m->taxis[i].y) = 1;
+				//m->mapaB[m->taxis[i].x][m->taxis[i].y] = 1;
 			}
 		}
 	}
