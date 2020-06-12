@@ -2,7 +2,7 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCriaTaxis, hThreadInformaMapa, hThreadMapa, hThreadComunicacao, hThreadSai, hEventThread, hThreadComandos, hLib;
+	HANDLE hThreadCriaTaxis, hThreadInformaMapa, hThreadMapa, hThreadComunicacao, hThreadSai, hEventThread, hThreadComandos, hLib, hThreadPassageiros, hThreadCriaPassageiros;
 	Centaxi m;
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -22,14 +22,13 @@ int _tmain(int argc, TCHAR* argv[]) {
 		dll_logV(TEXT("\n\tDimensões do mapa insuficientes"));
 		return 0;
 	}
-	hThreadCriaTaxis = CreateThread(NULL, 0, threadCriaTaxis, &m, 0, NULL);
-	hThreadInformaMapa = CreateThread(NULL, 0, informaMapa, &m, 0, NULL);
 
 	m.aceitaTaxis = 1;
 	m.sair = 0;
 	m.nTaxis = 0;
 	if (argc == 2) {
 		m.maxTaxis = atoi(argv[1]);
+		m.maxPass = LIMITE_PASS;
 	}
 	else if (argc == 3) {
 		m.maxTaxis = atoi(argv[1]);
@@ -39,6 +38,13 @@ int _tmain(int argc, TCHAR* argv[]) {
 		m.maxTaxis = LIMITE_TAXIS;
 		m.maxPass = LIMITE_PASS;
 	}
+
+
+	hThreadCriaTaxis = CreateThread(NULL, 0, threadCriaTaxis, &m, 0, NULL);
+	hThreadPassageiros = CreateThread(NULL, 0, threadPassageiros, &m, 0, NULL);
+	hThreadInformaMapa = CreateThread(NULL, 0, informaMapa, &m, 0, NULL);
+
+	
 	hThreadComunicacao = CreateThread(NULL, 0, threadComunicaTaxis, &m, 0, NULL);
 	hThreadComandos = CreateThread(NULL, 0, threadComandos, &m, 0, NULL);
 	hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
@@ -47,6 +53,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	WaitForSingleObject(hThreadInformaMapa, INFINITE);
 	WaitForSingleObject(hThreadCriaTaxis, INFINITE);
 	WaitForSingleObject(hThreadComunicacao, INFINITE);
+	WaitForSingleObject(hThreadPassageiros, INFINITE);
 	return 0;
 }
 
@@ -347,6 +354,78 @@ DWORD WINAPI threadCriaTaxis(LPVOID lpParam) {
 	ZeroMemory(t, sizeof(Taxi) * m->maxTaxis);
 
 	m->taxis = t;
+}
+
+DWORD WINAPI threadPassageiros(LPVOID lpParam) {
+	HANDLE hMapFile, hLib, hPipe;
+	Centaxi* m = (Centaxi*)lpParam;
+	BufferCircular b;
+	BufferCircular* bc = &b;
+	Passageiro passageiro;
+	DWORD dwRead, dwWrite;
+	TCHAR buffer[BUFFSIZE];
+
+	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
+	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
+
+	b.w = 0;
+	b.r = 0;
+	ZeroMemory(b.passageiros, sizeof(Passageiro) * LIMITE_PASS);
+	
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(BufferCircular), MEMPAR_PASS);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+	dll_registerV(MEMPAR_PASS, 6);
+
+	bc = (BufferCircular*) MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(BufferCircular));
+
+	if (bc == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+	dll_registerV(MEMPAR_PASS, 7);
+
+	hPipe = CreateNamedPipe(PIPENAME, PIPE_ACCESS_DUPLEX | WRITE_OWNER, PIPE_WAIT | PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, m->maxPass, sizeof(Passageiro), sizeof(Passageiro), 1000, NULL);
+
+	if (hPipe == INVALID_HANDLE_VALUE) {
+		_tprintf(TEXT("[ERRO] Problema ao criar named pipe do servidor: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+
+	
+	while (TRUE) {
+		if (!ConnectNamedPipe(hPipe, NULL)) {
+			_tprintf(TEXT("[ERRO] Ligação ao pipe do servior!\n"));
+			exit(EXIT_FAILURE);
+		}
+
+		if (!ReadFile(hPipe, &passageiro, sizeof(Passageiro), &dwRead, NULL)) {
+			_tprintf(TEXT("[ERRO] Leitura do named pipe: %d\n"), GetLastError());
+			exit(EXIT_FAILURE);
+		}
+		if (!dwRead) {
+			_tprintf(TEXT("[ERRO] Não foram lidos bytes \n"));
+			exit(EXIT_FAILURE);
+		}
+		_tprintf(TEXT("\nNovo passageiro: %s"), passageiro.nome);
+		_tprintf(TEXT("\nX: %d"), passageiro.x);
+		_tprintf(TEXT("\nY: %d"), passageiro.y);
+		_tcscpy_s(passageiro.nome, sizeof(passageiro.nome) / sizeof(TCHAR), TEXT(" daniel"));
+		if (!WriteFile(hPipe, &passageiro, sizeof(Passageiro), &dwWrite, NULL)) {
+			_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+			exit(EXIT_FAILURE);
+		}
+		DisconnectNamedPipe(hPipe);
+	}
+	UnmapViewOfFile(bc);
+	CloseHandle(hMapFile);
 }
 
 DWORD WINAPI threadComandos(LPVOID lpParam) {

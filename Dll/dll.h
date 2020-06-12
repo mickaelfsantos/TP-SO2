@@ -47,9 +47,22 @@
 #define MUTEX_TAXI TEXT("novoTaxiMutex")
 #define EVENTO_ENCERRA_TUDO TEXT("encerraTudo")
 #define MATRICULA_BUFFER 12
+#define NOMEPASSAGEIRO 24
+#define BUFFSIZE 128
+
+
+#define PIPENAME TEXT("\\\\.\\pipe\\LogPipe")
 
 
 //structs
+
+typedef struct {
+	int x, y, xA, yA;
+	int estado; //0-a aguardar taxi, 1-a ser transportado, 2-finalizou
+	TCHAR nome[NOMEPASSAGEIRO];
+}Passageiro;
+
+
 typedef struct {
 	int id;
 	int x;

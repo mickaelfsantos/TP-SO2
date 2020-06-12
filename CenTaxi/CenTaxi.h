@@ -6,6 +6,7 @@ typedef struct {
 	int maxTaxis;
 	int maxPass;
 	int nTaxis;
+	int nPass;
 	int aceitaTaxis;
 	int* mapa; //0 edificio 1 estada
 	Taxi* taxis;
@@ -13,7 +14,7 @@ typedef struct {
 }Centaxi;
 
 typedef struct {
-	//Passageiro passageiros[LIMITE_PASS];
+	Passageiro passageiros[LIMITE_PASS];
 	int r;
 	int w;
 }BufferCircular;
@@ -29,6 +30,7 @@ void limpaEcra();
 DWORD WINAPI informaMapa(LPVOID lpParam);
 DWORD WINAPI carregaMapa(LPVOID lpParam);
 DWORD WINAPI threadCriaTaxis(LPVOID lpParam);
+DWORD WINAPI threadPassageiros(LPVOID lpParam);
 DWORD WINAPI threadComandos(LPVOID lpParam);
 DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
