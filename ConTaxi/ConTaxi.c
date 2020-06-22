@@ -2,11 +2,12 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hWaitableTimer;
+	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hWaitableTimer, hThreadPassageiros, hThreadRespostas;
 	Taxi taxi;
 	LARGE_INTEGER liDueTime;
 	Contaxi c;
 	int i;
+	TCHAR pipe[PIPESIZE];
 
 	HINSTANCE hLib, hCom;
 
@@ -39,6 +40,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	}
 	
 	WaitForSingleObject(hThreadInf, INFINITE);
+
 	taxi = dll2_comunicaV(taxi);
 	if (taxi.aceite != 1) {
 		_tprintf(TEXT("\nNão foi aceite por parte da central")); 
@@ -51,34 +53,29 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	c.alturaMapa = taxi.alturaMapa;
 	c.larguraMapa = taxi.larguraMapa;
+	c.maxTaxis = taxi.maxTaxis;
 	c.mapa = NULL;
 	c = dll2_carregaM(c);
+	c.nq = NQ;
 
 	taxi.atualizaMovimentacao = 1;
+	taxi.temPassageiro = 0;
 	taxi.xA = taxi.x;
 	taxi.yA = taxi.y;
 
-	c.m = (int*)malloc(sizeof(int*) * c.alturaMapa);
-	for (int i = 0; i < c.larguraMapa; i++) {
-		c.m[i] = malloc(sizeof(int) * c.larguraMapa);
-	}
-
-	for (int i = 0, k = 0; i < c.alturaMapa; i++) {
-		for (int j = 0; j < c.larguraMapa; j++, k++) {
-			c.m[i][j] = c.mapa[k];
-		}
-	}
+	
 	c.taxi = &taxi;
 
 	hWaitableTimer =  CreateWaitableTimer(NULL, TRUE, taxi.matricula);
-	dll_registerV(WAITABLETIMER, 5);
 	if (hWaitableTimer ==NULL){
 		printf("Erro ao criar waitable timer (%d)\n", GetLastError());
 		return 1;
 	}
+	dll_registerV(WAITABLETIMER, 5);
 
 
 	hThreadComandos = CreateThread(NULL, 0, threadComandosTaxi, &c, 0, NULL);
+	hThreadPassageiros = CreateThread(NULL, 0, threadPassageiros, &c, 0, NULL);
 
 	while (c.sair!=1) {
 
@@ -100,10 +97,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 		dll2_comunicaV(taxi);
 	}
 
-	WaitForSingleObject(hThreadComandos, INFINITE);
-	for (int i = 0; i < c.alturaMapa; i++){
-		free(c.m[i]);
-	}
+
 	CloseHandle(hWaitableTimer);
 
 	return 0;
@@ -130,19 +124,20 @@ void movimentaCarro(Contaxi * c) {
 	xA = c->taxi->xA;
 	yA = c->taxi->yA;
 
-	if (x >= 1 && c->m[x - 1][y] == 1) { //pode subir
+	
+	if (x >= 1 && *(c->mapa + (x - 1) * c->larguraMapa + y) == 1) { //pode subir
 		aux[0] = 1;
 		nPossiveis++;
 	}
-	if (y <= c->larguraMapa - 1 && c->m[x][y + 1] == 1) { //pode ir para a direita
+	if (y <= c->larguraMapa - 1 && *(c->mapa + x * c->larguraMapa + (y+1)) == 1) { //pode ir para a direita
 		aux[1] = 1;
 		nPossiveis++;
 	}
-	if (y >= 1 && c->m[x][y - 1] == 1) { //pode ir para a esquerda
+	if (y >= 1 && *(c->mapa + x * c->larguraMapa + (y - 1)) == 1) { //pode ir para a esquerda
 		aux[2] = 1;
 		nPossiveis++;
 	}
-	if (x <= c->alturaMapa - 1 && c->m[x + 1][y] == 1) { //pode descer
+	if (x <= c->alturaMapa - 1 && *(c->mapa + (x+1) * c->larguraMapa + y) == 1) { //pode descer
 		aux[3] = 1;
 		nPossiveis++;
 	}
@@ -236,10 +231,21 @@ void moveBaixo(Contaxi* c, float x) {
 	c->taxi->yA = c->taxi->y;
 }
 
+
+DWORD WINAPI threadPassageiros(LPVOID lpParam) {
+	Contaxi* c = (Contaxi*)lpParam;
+	HANDLE hCom;
+	hCom = LoadLibrary(TEXT("Dll.dll"));
+	dll2_threadPassageiros dll_threadPassageiros = (dll2_threadPassageiros)GetProcAddress(hCom, "threadPassageiros");
+	dll_threadPassageiros(c);
+}
+
+
 DWORD WINAPI threadInformacao(LPVOID lpParam) {
 	Taxi* taxi = (Taxi*)lpParam;
 	TCHAR lixo[2];
 	int i;
+	TCHAR pipe[PIPESIZE];
 
 	taxi->id = GetCurrentProcessId();
 	_tprintf(TEXT("Olá. O seu ID é: %d"), taxi->id);
@@ -254,6 +260,9 @@ DWORD WINAPI threadInformacao(LPVOID lpParam) {
 	taxi->aceite = -1;
 	taxi->atualizaMovimentacao = 0; 
 	taxi->velocidade = 1;
+	_tcscpy_s(pipe, PIPESIZE, TEXT("\\\\.\\pipe\\pipe"));
+	_tcscat_s(pipe, PIPESIZE, taxi->matricula);
+	_tcscpy_s(taxi->pipe, PIPESIZE, pipe);
 }
 
 DWORD WINAPI threadEncerra(LPVOID lpParam) {
@@ -321,27 +330,47 @@ void desacelerar(Contaxi* c) {
 	ReleaseMutex(hMutex, INFINITE);
 }
 
-int trataComando(TCHAR comando[], Contaxi* c) {
-	if (!_tcscmp(comando, TEXT("acelerar"))) {
+void alterarNq(Contaxi* c) {
+	HANDLE hMutex;
+	int nq;
+	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
+		return;
+	}
+	_tprintf(TEXT("\n\tIntroduza o número de quadriculas que pretende: "));
+	_tscanf_s(TEXT("%d"), &nq);
+	WaitForSingleObject(hMutex, INFINITE);
+	c->nq = nq;
+	ReleaseMutex(hMutex, INFINITE);
+}
+
+int trataComando(int opcao, Contaxi* c) {
+	switch (opcao)
+	{
+	case 1:
 		acelerar(c);
 		return 0;
-	}
-	else if (!_tcscmp(comando, TEXT("desacelerar"))) {
+	case 2:
 		desacelerar(c);
 		return 0;
-	}
-	else if (!_tcscmp(comando, TEXT("sair"))) {
+	case 3:
+		alterarNq(c);
+		return 0;
+	case 4:
 		sair(*c->taxi);
 		return -1;
+	default:
+		return 1;;
 	}
-	return 1;
 }
 
 void mostraComandos() {
 	_tprintf(TEXT("\n\t---Comandos disponíveis---"));
-	_tprintf(TEXT("\n\tacelerar: acelera o taxi"));
-	_tprintf(TEXT("\n\tdesacelerar: desacelerar o taxi"));
-	_tprintf(TEXT("\n\tsair\n"));
+	_tprintf(TEXT("\n\t1- acelerar: acelera o taxi"));
+	_tprintf(TEXT("\n\t2- desacelerar: desacelerar o taxi"));
+	_tprintf(TEXT("\n\t3- alterarNQ: alterar número de quadriculas no demonstrar interesse"));
+	_tprintf(TEXT("\n\t4- sair\n"));
 }
 
 void limpaEcra() {

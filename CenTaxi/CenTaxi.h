@@ -10,20 +10,28 @@ typedef struct {
 	int aceitaTaxis;
 	int* mapa; //0 edificio 1 estada
 	Taxi* taxis;
+	Passageiro* passageiros;
 	int sair;
+	Interessados* interessados;
+	int nSegundos;
+	int nQuadriculas;
 }Centaxi;
 
 typedef struct {
-	Passageiro passageiros[LIMITE_PASS];
-	int r;
-	int w;
-}BufferCircular;
-
+	Passageiro pass;
+	Interessados* inte;
+	int nSegundos;
+	Passageiro* passageiros;
+	BufferCircular* bc;
+	int nPass;
+	int maxTaxis;
+	int nSemaforo;
+}StructThread;
 
 void mostraComandos();
 void atuaAceitacao(Centaxi* m);
 void mostraMapa(Centaxi* m);
-int trataComando(TCHAR comando[], Centaxi* m);
+int trataComando(int op, Centaxi* m);
 int sair(Centaxi* m);
 void listaTaxis(Centaxi* m);
 void limpaEcra();
@@ -34,3 +42,5 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam);
 DWORD WINAPI threadComandos(LPVOID lpParam);
 DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
+DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam);
+DWORD WINAPI threadCriaPassageiros(LPVOID lpParam);

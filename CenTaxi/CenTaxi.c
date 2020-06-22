@@ -26,6 +26,9 @@ int _tmain(int argc, TCHAR* argv[]) {
 	m.aceitaTaxis = 1;
 	m.sair = 0;
 	m.nTaxis = 0;
+	m.nPass = 0;
+	m.nQuadriculas = NQ;
+	m.nSegundos = SEGUNDOSDEFAULT;
 	if (argc == 2) {
 		m.maxTaxis = atoi(argv[1]);
 		m.maxPass = LIMITE_PASS;
@@ -41,6 +44,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 
 	hThreadCriaTaxis = CreateThread(NULL, 0, threadCriaTaxis, &m, 0, NULL);
+	hThreadCriaPassageiros = CreateThread(NULL, 0, threadCriaPassageiros, &m, 0, NULL);
+	
 	hThreadPassageiros = CreateThread(NULL, 0, threadPassageiros, &m, 0, NULL);
 	hThreadInformaMapa = CreateThread(NULL, 0, informaMapa, &m, 0, NULL);
 
@@ -52,19 +57,19 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	WaitForSingleObject(hThreadInformaMapa, INFINITE);
 	WaitForSingleObject(hThreadCriaTaxis, INFINITE);
+	WaitForSingleObject(hThreadCriaPassageiros, INFINITE);
 	WaitForSingleObject(hThreadComunicacao, INFINITE);
-	WaitForSingleObject(hThreadPassageiros, INFINITE);
 	return 0;
 }
 
 void mostraComandos() {
 	_tprintf(TEXT("\n\t---Comandos disponíveis---\n"));
-	_tprintf(TEXT("\n\texpulsaTaxi T: expulsa o taxi T, se estiver sem passageiros"));
-	_tprintf(TEXT("\n\tencerraTudo: encerra todos os processos"));
-	_tprintf(TEXT("\n\tlistaTaxis: lista taxis e estado atual assim como passageiros em transporte e em espera"));
-	_tprintf(TEXT("\n\tatuaAceitacao: Pausa ou retoma a aceitacao de taxis"));
-	_tprintf(TEXT("\n\tdefineDuracao: Tempo que a CenTaxi aguarda por um taxi manifestar interesse em transporte um passageiro"));
-	_tprintf(TEXT("\n\tmostraMapa: Mostra o mapa atualizado"));
+	_tprintf(TEXT("\n\t1- expulsaTaxi T: expulsa o taxi T, se estiver sem passageiros"));
+	_tprintf(TEXT("\n\t2- encerraTudo: encerra todos os processos"));
+	_tprintf(TEXT("\n\t3- listaTaxis: lista taxis e estado atual assim como passageiros em transporte e em espera"));
+	_tprintf(TEXT("\n\t4- atuaAceitacao: Pausa ou retoma a aceitacao de taxis"));
+	_tprintf(TEXT("\n\t5- defineDuracao: Tempo que a CenTaxi aguarda por um taxi manifestar interesse em transporte um passageiro"));
+	_tprintf(TEXT("\n\t6- mostraMapa: Mostra o mapa atualizado"));
 }
 
 void mostraMapa(Centaxi* m) {
@@ -85,55 +90,88 @@ void mostraMapa(Centaxi* m) {
 	}
 }
 
-int trataComando(TCHAR comando[], Centaxi* m) {
-	if (!_tcscmp(comando, TEXT("encerraTudo"))) {
+int trataComando(int op, Centaxi* m) {
+	switch (op)
+	{
+	case 1:
+		break;
+	case 2:
 		return sair(m);
-	}
-	else if (!_tcscmp(comando, TEXT("listaTaxis"))) {
+	case 3:
 		listaTaxis(m);
-	}
-	else if (!_tcscmp(comando, TEXT("mostraMapa"))) {
-		mostraMapa(m);
-	}
-	else if (!_tcscmp(comando, TEXT("atuaAceitacao"))) {
+		break;
+	case 4:
 		atuaAceitacao(m);
+		break;
+	case 5:
+		break;
+	case 6:
+		mostraMapa(m);
+		break;
+	default:
+		return 0;
 	}
-	return 0;
 }
 
 void atuaAceitacao(Centaxi* m) {
+	HANDLE hMutex;
+
+	hMutex = CreateMutex(NULL, FALSE, CENTAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
+		return;
+	}
+	WaitForSingleObject(hMutex, INFINITE);
+
 	if (m->aceitaTaxis == 0)
 		m->aceitaTaxis = 1;
 	else
 		m->aceitaTaxis = 0;
+	ReleaseMutex(hMutex);
+	CloseHandle(hMutex);
 }
 
 int sair(Centaxi* m) {
-	HANDLE hSem, hEvent, hMutex, hLib;
+	HANDLE hSem, hEvent, hLib, hMutex, hMutexCentaxi, hSemLei;
 
+	
+	hMutexCentaxi = CreateMutex(NULL, FALSE, CENTAXI);
+	if (hMutexCentaxi == NULL) {
+		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
+		return;
+	}
+	WaitForSingleObject(hMutexCentaxi, INFINITE);
 	m->sair = 1;
+	ReleaseMutex(hMutexCentaxi);
 
 	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
 	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
 
-	hSem = CreateSemaphore(NULL, 0, 1, MUTEX_NOVO_TAXI_LEI);
+	hSem = CreateSemaphore(NULL, 1, 1, MUTEX_NOVO_TAXI_LEI);
 	if (hSem == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
 		return -1;
 	}
-	ReleaseSemaphore(hSem, 1, NULL);
 
 	hMutex = OpenMutex(SYNCHRONIZE, FALSE, MUTEX_TAXI_SAI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("Erro ao criar mutex (%d).\n"), GetLastError());
 		return -1;
 	}
+
+	hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_NOVO_TAXI_LEI);
+	if (hSemLei == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
+		return -1;
+	}
 	
 	hEvent = CreateEvent(NULL, FALSE, FALSE, EVENTO_ENCERRA_TUDO);
 	dll_registerV(EVENTO_ENCERRA_TUDO, 4);
 	SetEvent(hEvent);
+	ReleaseSemaphore(hSemLei, 1, NULL);
 	CloseHandle(hSem);
 	CloseHandle(hMutex);
+	CloseHandle(hMutexCentaxi);
 	return -1;
 }
 
@@ -142,7 +180,7 @@ void listaTaxis(Centaxi* m) {
 	HANDLE hMutex;
 
 	limpaEcra();
-	hMutex = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
+	hMutex = CreateMutex(NULL, FALSE, ARRAY_TAXIS);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("Erro ao abrir mutex (%d).\n"), GetLastError());
 		return;
@@ -356,14 +394,49 @@ DWORD WINAPI threadCriaTaxis(LPVOID lpParam) {
 	m->taxis = t;
 }
 
+DWORD WINAPI threadCriaPassageiros(LPVOID lpParam) {
+	HANDLE hMapFile, hLib;
+	Centaxi* m = (Centaxi*)lpParam;
+	Passageiro* t;
+
+	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
+	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
+
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, m->maxPass * sizeof(Passageiro), MEMPAR_PASS);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+	dll_registerV(MEMPAR_PASS, 6);
+
+	t = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Passageiro) * m->maxPass);
+
+	if (t == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+
+	dll_registerV(MEMPAR_PASS, 7);
+	ZeroMemory(t, sizeof(Passageiro) * m->maxPass);
+
+	m->passageiros = t;
+}
+
 DWORD WINAPI threadPassageiros(LPVOID lpParam) {
-	HANDLE hMapFile, hLib, hPipe;
+	HANDLE hMapFile, hLib, hPipe, hMutexCentaxi, hMutexPassageiros, hMutexBufferCircular, hEvento[LIMITE_PASS], hThreads[LIMITE_PASS], hMapFileInteressados;
 	Centaxi* m = (Centaxi*)lpParam;
 	BufferCircular b;
 	BufferCircular* bc = &b;
 	Passageiro passageiro;
-	DWORD dwRead, dwWrite;
+	DWORD dwRead, dwWrite, dwId;
 	TCHAR buffer[BUFFSIZE];
+	Interessados* st;
+	int saltar=0;
 
 	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
 	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
@@ -371,7 +444,33 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	b.w = 0;
 	b.r = 0;
 	ZeroMemory(b.passageiros, sizeof(Passageiro) * LIMITE_PASS);
-	
+
+	hMapFileInteressados = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Interessados)*m->maxTaxis, MEMPAR_INT);
+
+	if (hMapFileInteressados == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+	dll_registerV(MEMPAR_INT, 6);
+
+	st = (Interessados*)MapViewOfFile(hMapFileInteressados, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Interessados)*m->maxTaxis);
+
+	if (st == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFileInteressados);
+		return -1;
+	}
+	dll_registerV(MEMPAR_INT, 7);
+
+	for (int i = 0; i < m->maxTaxis; i++) {
+		_tcscpy_s(st[i].matricula, sizeof(st[i].matricula) / sizeof(TCHAR), TEXT(""));
+		_tcscpy_s(st[i].nomePassageiro, sizeof(st[i].nomePassageiro) / sizeof(TCHAR), TEXT(""));
+		st[i].nSegundos = m->nSegundos;
+	}
+
 	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(BufferCircular), MEMPAR_PASS);
 
 	if (hMapFile == NULL)
@@ -381,7 +480,7 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	}
 	dll_registerV(MEMPAR_PASS, 6);
 
-	bc = (BufferCircular*) MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(BufferCircular));
+	bc = (BufferCircular*)MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(BufferCircular));
 
 	if (bc == NULL)
 	{
@@ -392,15 +491,52 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	}
 	dll_registerV(MEMPAR_PASS, 7);
 
-	hPipe = CreateNamedPipe(PIPENAME, PIPE_ACCESS_DUPLEX | WRITE_OWNER, PIPE_WAIT | PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, m->maxPass, sizeof(Passageiro), sizeof(Passageiro), 1000, NULL);
+	hPipe = CreateNamedPipe(PIPENAME_NOVO, PIPE_ACCESS_DUPLEX, PIPE_WAIT | PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, 1,
+		sizeof(Passageiro), sizeof(Passageiro), 0, NULL);
 
 	if (hPipe == INVALID_HANDLE_VALUE) {
 		_tprintf(TEXT("[ERRO] Problema ao criar named pipe do servidor: %d\n"), GetLastError());
 		return EXIT_FAILURE;
 	}
+	dll_registerV(PIPENAME_NOVO, 8);
 
-	
-	while (TRUE) {
+
+	hMutexCentaxi = CreateMutex(NULL, FALSE, CENTAXI);
+
+	if (hMutexCentaxi == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+	dll_registerV(CENTAXI, 1);
+
+	hMutexPassageiros = CreateMutex(NULL, FALSE, ARRAY_PASSAGEIROS);
+
+	if (hMutexPassageiros == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+	dll_registerV(ARRAY_PASSAGEIROS, 1);
+
+	hMutexBufferCircular = CreateMutex(NULL, FALSE, BUFFERCIRCULAR);
+
+	if (hMutexBufferCircular == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+	dll_registerV(BUFFERCIRCULAR, 1);
+
+	for (int i = 0; i < LIMITE_PASS; i++) {
+		_itot_s(i, buffer, sizeof(buffer) / sizeof(TCHAR), 2);
+		hEvento[i] = CreateEvent(NULL, TRUE, FALSE, buffer);
+		if (hEvento[i] == NULL) {
+			_tprintf(TEXT("Erro ao criar semáforos: %d\n"), GetLastError());
+			return EXIT_FAILURE;
+		}
+		dll_registerV(buffer, 3);
+	}
+
+	while (!m->sair) {
+
 		if (!ConnectNamedPipe(hPipe, NULL)) {
 			_tprintf(TEXT("[ERRO] Ligação ao pipe do servior!\n"));
 			exit(EXIT_FAILURE);
@@ -414,22 +550,260 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 			_tprintf(TEXT("[ERRO] Não foram lidos bytes \n"));
 			exit(EXIT_FAILURE);
 		}
-		_tprintf(TEXT("\nNovo passageiro: %s"), passageiro.nome);
-		_tprintf(TEXT("\nX: %d"), passageiro.x);
-		_tprintf(TEXT("\nY: %d"), passageiro.y);
-		_tcscpy_s(passageiro.nome, sizeof(passageiro.nome) / sizeof(TCHAR), TEXT(" daniel"));
+
+		WaitForSingleObject(hMutexBufferCircular, INFINITE);
+		if ((b.w == LIMITE_PASS && b.r == 0) || b.w + 1 == b.r) {
+			_tcscpy_s(passageiro.resposta, sizeof(passageiro.resposta) / sizeof(TCHAR), TEXT("Buffer circular cheio. Tente mais tarde."));
+			if (!WriteFile(hPipe, &passageiro, sizeof(Passageiro), &dwWrite, NULL)) {
+				_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+				exit(EXIT_FAILURE);
+			}
+			ReleaseMutex(hMutexBufferCircular);
+			DisconnectNamedPipe(hPipe);
+			continue;
+		}
+		if (*(m->mapa + passageiro.x * m->larguraMapa + passageiro.y) == 0) {
+			_tcscpy_s(passageiro.resposta, sizeof(passageiro.resposta) / sizeof(TCHAR), TEXT("Posição invalida. Insira-se na estrada"));
+			if (!WriteFile(hPipe, &passageiro, sizeof(Passageiro), &dwWrite, NULL)) {
+				_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+				exit(EXIT_FAILURE);
+			}
+			ReleaseMutex(hMutexBufferCircular);
+			DisconnectNamedPipe(hPipe);
+			continue;
+		}
+
+		WaitForSingleObject(hMutexPassageiros, INFINITE);
+		for (int i = 0; i < m->nPass; i++) {
+			if (_tcscmp(m->passageiros[i].nome, passageiro.nome) == 0) {
+				_tcscpy_s(passageiro.resposta, sizeof(passageiro.resposta) / sizeof(TCHAR), TEXT("Esse passageiro já se encontra registado"));
+				if (!WriteFile(hPipe, &passageiro, sizeof(Passageiro), &dwWrite, NULL)) {
+					_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+					exit(EXIT_FAILURE);
+				}
+				ReleaseMutex(hMutexBufferCircular);
+				ReleaseMutex(hMutexPassageiros);
+				DisconnectNamedPipe(hPipe);
+				saltar = 1;
+			}
+		}
+		if (saltar == 1) {
+			saltar = 0;
+			continue;
+		}
+
+		WaitForSingleObject(hMutexCentaxi, INFINITE);
+		m->passageiros[m->nPass].estado = passageiro.estado;
+		m->passageiros[m->nPass].x = passageiro.x;
+		m->passageiros[m->nPass].xA = passageiro.xA;
+		m->passageiros[m->nPass].y = passageiro.y;
+		m->passageiros[m->nPass].yA = passageiro.yA;
+		_tcscpy_s((m->passageiros + m->nPass)->nome, sizeof(passageiro.nome) / sizeof(TCHAR), passageiro.nome);
+		m->nPass++;
+		ReleaseMutex(hMutexPassageiros);
+		if (b.w == LIMITE_PASS)
+			b.w = 0;
+		b.passageiros[b.w] = passageiro;
+		
+		StructThread s;
+
+		s.pass = passageiro;
+		s.nSegundos = m->nSegundos;
+		s.inte = st;
+		s.bc = bc;
+		s.passageiros = m->passageiros;
+		s.nPass = m->nPass;
+		s.maxTaxis = m->maxTaxis;
+		s.nSemaforo = b.w;
+
+		ReleaseMutex(hMutexCentaxi);
+		hThreads[b.w] = CreateThread(NULL, 0, atribuiTaxiPassageiro, &s, 0, &dwId);
+
+		if (hThreads[b.w] == NULL)
+		{
+			_tprintf(TEXT("CreateThread failed, GLE=%d.\n"), GetLastError());
+			return -1;
+		}
+		SetEvent(hEvento[b.w]);
+
+		b.w = (++b.w) % (LIMITE_PASS + 1);
+		_tprintf(TEXT("\n\tNovo passageiro: %s\n\tComando:"), passageiro.nome);
+
+		_tcscpy_s(passageiro.resposta, sizeof(passageiro.resposta) / sizeof(TCHAR), TEXT("Aguarde por um interessado"));
 		if (!WriteFile(hPipe, &passageiro, sizeof(Passageiro), &dwWrite, NULL)) {
 			_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
 			exit(EXIT_FAILURE);
 		}
+
+		ReleaseMutex(hMutexBufferCircular);
 		DisconnectNamedPipe(hPipe);
 	}
+
+	WaitForMultipleObjects(LIMITE_PASS, hThreads, TRUE, INFINITE);
 	UnmapViewOfFile(bc);
 	CloseHandle(hMapFile);
 }
 
+DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam) {
+	StructThread* st = (StructThread*)lpParam;
+	StructThread s;
+	HANDLE hWaitableTimer, hLib, hPipe, hMutexBufferCircular, hMutexPassageiros, hMutexCentaxi, hEvent, hPipeResposta;
+	LARGE_INTEGER liDueTime;
+	Taxi* taxis=NULL;
+	DWORD dwWriten;
+	int contador = 0, pos;
+	TCHAR buffer[BUFFSIZE];
+
+	s.pass = st->pass;
+	s.nSemaforo = st->nSemaforo;
+
+	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
+	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
+
+
+	_itot_s(s.nSemaforo, buffer, sizeof(buffer) / sizeof(TCHAR), 2);
+	hEvent = CreateEvent(NULL, TRUE, TRUE, buffer);
+	if (hEvent == NULL) {
+		_tprintf(TEXT("Erro ao abrir semáforo: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+	
+	hMutexBufferCircular = CreateMutex(NULL, FALSE, BUFFERCIRCULAR);
+
+	if (hMutexBufferCircular == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+
+	hMutexPassageiros = CreateMutex(NULL, FALSE, ARRAY_PASSAGEIROS);
+
+	if (hMutexPassageiros == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+
+	hMutexCentaxi = CreateMutex(NULL, FALSE, CENTAXI);
+
+	if (hMutexCentaxi == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+	
+	hWaitableTimer = CreateWaitableTimer(NULL, TRUE, st->pass.nome);
+	if (hWaitableTimer == NULL) {
+		printf("Erro ao criar waitable timer (%d)\n", GetLastError());
+		return 1;
+	}
+	dll_registerV(st->pass.nome, 5);
+
+	liDueTime.QuadPart = (WAIT_VELOCIDADE_UM * st->nSegundos);
+
+	if (!SetWaitableTimer(hWaitableTimer, &liDueTime, 0, NULL, NULL, 0)){
+		printf("Erro ao fazer setWaitableTimer (%d)\n", GetLastError());
+		return 1;
+	}
+	WaitForSingleObject(hWaitableTimer, INFINITE);
+	ResetEvent(hEvent);
+	for (int i = 0; i < st->maxTaxis; i++) {
+		if (_tcscmp(st->inte[i].nomePassageiro, s.pass.nome) == 0) {
+			taxis = realloc(taxis, ((contador++) + 1) * sizeof(Taxi));
+			_tcscpy_s(taxis[contador-1].matricula, sizeof(st->inte[i].matricula) / sizeof(TCHAR), st->inte[i].matricula);
+			_tcscpy_s(taxis[contador - 1].pipe, sizeof(st->inte[i].pipe) / sizeof(TCHAR), st->inte[i].pipe);
+			_tcscpy_s(st->inte[i].matricula, MATRICULA_BUFFER, TEXT(""));
+			_tcscpy_s(st->inte[i].nomePassageiro, NOMEPASSAGEIRO, TEXT(""));
+			_tcscpy_s(st->inte[i].pipe, PIPESIZE, TEXT(""));
+		}
+	}
+
+	if (contador != 0) {
+
+		srand((int)time(NULL));
+		pos = rand() % (contador);
+
+		_tcscpy_s(s.pass.taxi, sizeof(s.pass.taxi) / sizeof(TCHAR), taxis[pos].matricula);
+		for (int i = 0; i < contador; i++) {
+
+			if (!WaitNamedPipe(taxis[i].pipe, NMPWAIT_WAIT_FOREVER)) {
+				_tprintf(TEXT("[ERRO] Ligar ao pipe %s!\n"), taxis[i].pipe);
+				exit(EXIT_FAILURE);
+			}
+			hPipe = CreateFile(taxis[i].pipe, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+			if (hPipe == NULL) {
+				_tprintf(TEXT("[ERRO] Ligar ao pipe: %s!\n"), taxis[i].pipe);
+				exit(EXIT_FAILURE);
+			}
+
+			if (!WriteFile(hPipe, &s.pass, sizeof(Passageiro), &dwWriten, NULL)) {
+				_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+				exit(EXIT_FAILURE);
+			}
+		}
+
+
+		if (!WaitNamedPipe(PIPENAME_RESPOSTA, NMPWAIT_WAIT_FOREVER)) {
+			_tprintf(TEXT("[ERRO] Ligar ao pipe %s!\n"), PIPENAME_RESPOSTA);
+			exit(EXIT_FAILURE);
+		}
+		hPipeResposta = CreateFile(PIPENAME_RESPOSTA, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+		if (hPipeResposta == NULL) {
+			_tprintf(TEXT("[ERRO] Ligar ao pipe: %s!\n"), PIPENAME_RESPOSTA);
+			exit(EXIT_FAILURE);
+		}
+		_tcscpy_s(s.pass.taxi, sizeof(s.pass.taxi) / sizeof(TCHAR), taxis[pos].matricula);
+		if (!WriteFile(hPipeResposta, &s.pass, sizeof(Passageiro), &dwWriten, NULL)) {
+			_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+			exit(EXIT_FAILURE);
+		}
+
+		WaitForSingleObject(hMutexBufferCircular, INFINITE);
+		st->bc->r = (++st->bc->r) % (LIMITE_PASS);
+		ReleaseMutex(hMutexBufferCircular);
+		WaitForSingleObject(hMutexPassageiros, INFINITE);
+		WaitForSingleObject(hMutexCentaxi, INFINITE);
+		for (int i = 0; i < st->nPass; i++) {
+			if (_tcscmp(st->passageiros[i].nome, s.pass.nome) == 0) {
+				while (i < st->nPass - 1) {
+					st->passageiros[i].estado = st->passageiros[i + 1].estado;
+					st->passageiros[i].x = st->passageiros[i + 1].x;
+					st->passageiros[i].y = st->passageiros[i + 1].y;
+					st->passageiros[i].xA = st->passageiros[i + 1].xA;
+					st->passageiros[i].yA = st->passageiros[i + 1].yA;
+					_tcscpy_s(st->passageiros[i].nome, sizeof(st->passageiros[i].nome) / sizeof(TCHAR), st->passageiros[i + 1].nome);
+					_tcscpy_s(st->passageiros[i].resposta, sizeof(st->passageiros[i].resposta) / sizeof(TCHAR), st->passageiros[i + 1].resposta);
+					i++;
+				}
+				st->nPass--;
+			}
+		}
+		ReleaseMutex(hMutexCentaxi);
+		ReleaseMutex(hMutexPassageiros);
+		CloseHandle(hMutexCentaxi);
+		CloseHandle(hMutexPassageiros);
+		CloseHandle(hMutexBufferCircular);
+	}
+	else {
+
+		if (!WaitNamedPipe(PIPENAME_RESPOSTA, NMPWAIT_WAIT_FOREVER)) {
+			_tprintf(TEXT("[ERRO] Ligar ao pipe %s!\n"), PIPENAME_RESPOSTA);
+			exit(EXIT_FAILURE);
+		}
+		hPipeResposta = CreateFile(PIPENAME_RESPOSTA, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+		if (hPipeResposta == NULL) {
+			_tprintf(TEXT("[ERRO] Ligar ao pipe: %s!\n"), PIPENAME_RESPOSTA);
+			exit(EXIT_FAILURE);
+		}
+		_tcscpy_s(s.pass.taxi, sizeof(s.pass.taxi) / sizeof(TCHAR), TEXT(""));
+		if (!WriteFile(hPipeResposta, &s.pass, sizeof(Passageiro), &dwWriten, NULL)) {
+			_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
 DWORD WINAPI threadComandos(LPVOID lpParam) {
-	TCHAR comando[256];
 	int i, op;
 	Centaxi* m = (Centaxi*)lpParam;
 
@@ -438,17 +812,15 @@ DWORD WINAPI threadComandos(LPVOID lpParam) {
 		_tprintf(TEXT("\tCentral de taxis.\n\n"));
 		mostraComandos();
 		_tprintf(TEXT("\n\n\tComando: "));
-		_fgetts(comando, 256, stdin);
-		for (i = 0; comando[i] != '\n'; i++);
-		comando[i] = '\0';
-		op = trataComando(comando, m);
+		_tscanf_s(TEXT("%d"), &op);
+		op = trataComando(op, m);
 	} while (op != -1);
 	return 0;
 }
 
 DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 
-	HANDLE hMapFile, hSemLei, hSemEsc, hSemRes, hSemAtualizaEsc, hSemAtualizaLei, hMutex, hLib;
+	HANDLE hMapFile, hSemLei, hSemEsc, hSemRes, hSemAtualizaEsc, hSemAtualizaLei, hMutexCentaxi, hMutexTaxis, hLib;
 	Taxi aux;
 	Taxi* t;
 	Centaxi* m = (Centaxi*)lpParam;
@@ -543,8 +915,8 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 	}
 	dll_registerV(MUTEX_PODE_ATUALIZAR_ARRAY_LEI, 3);
 
-	hMutex = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
-	if (hMutex == NULL) {
+	hMutexCentaxi= CreateMutex(NULL, FALSE, CENTAXI);
+	if (hMutexCentaxi == NULL) {
 		UnmapViewOfFile(t);
 		CloseHandle(hSemEsc);
 		CloseHandle(hSemLei);
@@ -554,7 +926,22 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 		CloseHandle(hSemAtualizaLei);
 		return -1;
 	}
-	dll_registerV(ATUALIZA_ARRAY_TAXIS, 1);
+	dll_registerV(CENTAXI, 1);
+
+	hMutexTaxis = CreateMutex(NULL, FALSE, ARRAY_TAXIS);
+	if (hMutexTaxis == NULL) {
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hSemLei);
+		CloseHandle(hSemRes);
+		CloseHandle(hMapFile);
+		CloseHandle(hSemAtualizaEsc);
+		CloseHandle(hSemAtualizaLei);
+		return -1;
+	}
+	dll_registerV(ARRAY_TAXIS, 1);
+
+	
 	while (!m->sair) {
 		WaitForSingleObject(hSemLei, INFINITE);
 		if (m->sair)
@@ -567,7 +954,9 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 			aux.velocidade = t->velocidade;
 			aux.aceite = 1;
 			_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
-
+			_tcscpy_s(aux.pipe, sizeof(aux.pipe) / sizeof(TCHAR), t->pipe);
+			WaitForSingleObject(hMutexCentaxi, INFINITE);
+			WaitForSingleObject(hMutexTaxis, INFINITE);
 			if (m->nTaxis != m->maxTaxis) {
 				for (int j = 0; j < m->nTaxis; j++) {
 					if (!_tcscmp(aux.matricula, m->taxis[j].matricula)) {
@@ -601,31 +990,34 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 					aux.larguraMapa = m->larguraMapa;
 					aux.alturaMapa = m->alturaMapa;
 					aux.atualizaMovimentacao = 1;
+					aux.maxTaxis = m->maxTaxis;
 				}
 			}
 			CopyMemory(t, &aux, sizeof(Taxi));
 			ReleaseSemaphore(hSemRes, 1, NULL);
 			if (aux.aceite) {
 				WaitForSingleObject(hSemAtualizaEsc, INFINITE);
-				WaitForSingleObject(hMutex, INFINITE);
 				m->taxis[m->nTaxis].id = aux.id;
 				m->taxis[m->nTaxis].x = aux.x;
 				m->taxis[m->nTaxis].y = aux.y;
 				m->taxis[m->nTaxis].velocidade = aux.velocidade;
 				_tcscpy_s(m->taxis[m->nTaxis].matricula, sizeof(m->taxis[m->nTaxis].matricula) / sizeof(TCHAR), aux.matricula);
+				_tcscpy_s(m->taxis[m->nTaxis].pipe, sizeof(m->taxis[m->nTaxis].pipe) / sizeof(TCHAR), aux.pipe);
 				m->nTaxis++;
 				_tprintf(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
 				dll_logV(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
 				_tprintf(TEXT("\n\tComando: "));
-				ReleaseMutex(hMutex);
 				ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
 			}
+			ReleaseMutex(hMutexTaxis);
+			ReleaseMutex(hMutexCentaxi);
 			ReleaseSemaphore(hSemEsc, 1, NULL);
 		}
 		else {
 			_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
 			WaitForSingleObject(hSemAtualizaEsc, INFINITE);
-			WaitForSingleObject(hMutex, INFINITE);
+			WaitForSingleObject(hMutexCentaxi, INFINITE);
+			WaitForSingleObject(hMutexTaxis, INFINITE);
 			for (pos = 0; pos < m->nTaxis; pos++) {
 				if (!_tcscmp(aux.matricula, m->taxis[pos].matricula)) {
 					aux = *t;
@@ -637,7 +1029,8 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 			m->taxis[pos].yA = aux.yA;
 			m->taxis[pos].xA = aux.xA;
 			m->taxis[pos].velocidade = aux.velocidade;
-			ReleaseMutex(hMutex);
+			ReleaseMutex(hMutexCentaxi);
+			ReleaseMutex(hMutexTaxis);
 			ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
 			ReleaseSemaphore(hSemRes, 1, NULL);
 			ReleaseSemaphore(hSemEsc, 1, NULL);
@@ -647,6 +1040,8 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 	UnmapViewOfFile(t);
 
 	CloseHandle(hMapFile);
+	CloseHandle(hMutexCentaxi);
+	CloseHandle(hMutexTaxis);
 	CloseHandle(hSemEsc);
 	CloseHandle(hSemLei);
 	CloseHandle(hSemRes);
@@ -683,7 +1078,7 @@ DWORD WINAPI threadSaiTaxi(LPVOID lpParam) {
 		return -1;
 	}
 	dll_registerV(MEMPAR_SAI_TAXI, 7);
-	hMutexS = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
+	hMutexS = CreateMutex(NULL, FALSE, ARRAY_TAXIS);
 	if (hMutexS == NULL) {
 		UnmapViewOfFile(sM);
 		CloseHandle(hMapFile);

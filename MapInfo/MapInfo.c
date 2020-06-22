@@ -14,17 +14,6 @@ int _tmain(int argc, TCHAR* argv[]) {
 	m = obtemDados();
 	m = carregaMapa(m);
 	
-	/*m.mapaB = (int*)malloc(sizeof(int*) * m.alturaMapa);
-	for (int i = 0; i < m.larguraMapa; i++) {
-		m.mapaB[i] = malloc(sizeof(int) * m.larguraMapa);
-	}
-
-	for (int i = 0, k = 0; i < m.alturaMapa; i++) {
-		for (int j = 0; j < m.larguraMapa; j++, k++) {
-			m.mapaB[i][j] = m.mapa[k];
-		}
-	}*/
-
 	hThreadEncerra = CreateThread(NULL, 0, threadEncerra, &m, 0, NULL);
 	hThreadTaxis = CreateThread(NULL, 0, atualizaTaxis, &m, 0, NULL);
 
@@ -34,7 +23,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 	Mapinfo* m = (Mapinfo*)lpParam;
-	HANDLE hSemLei, hSemEsc, hMapFile, hMutex;
+	HANDLE hSemLei, hSemEsc, hMapFile, hMutexCentaxi, hMutexTaxis;
 	Taxi* t;
 
 	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, m->maxTaxis * sizeof(Taxi), MEMPAR_TAXIS);
@@ -75,21 +64,32 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 
 		return -1;
 	}
-	hMutex = CreateMutex(NULL, FALSE, ATUALIZA_ARRAY_TAXIS);
-	if (hMutex == NULL) {
+	hMutexCentaxi = CreateMutex(NULL, FALSE, CENTAXI);
+	if (hMutexCentaxi == NULL) {
 		UnmapViewOfFile(t);
 		CloseHandle(hSemEsc);
 		CloseHandle(hMapFile);
 		CloseHandle(hSemLei);
 		return -1;
 	}
+
+	hMutexTaxis = CreateMutex(NULL, FALSE, ARRAY_TAXIS);
+	if (hMutexTaxis == NULL) {
+		UnmapViewOfFile(t);
+		CloseHandle(hSemEsc);
+		CloseHandle(hMapFile);
+		CloseHandle(hSemLei);
+		return -1;
+	}
+
+
 	while (m->sair!= 1) {
 		WaitForSingleObject(hSemLei, INFINITE);
 		if (m->sair == 1)
 			break;
-		WaitForSingleObject(hMutex, INFINITE);
+		WaitForSingleObject(hMutexCentaxi, INFINITE);
+		WaitForSingleObject(hMutexTaxis, INFINITE);
 		m->taxis = t;
-		ReleaseMutex(hMutex);
 		ReleaseSemaphore(hSemEsc, 1, NULL);
 		system("cls");
 		for (int i = 0; i < m->maxTaxis; i++) {
@@ -98,6 +98,8 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 				//m->mapaB[m->taxis[i].x][m->taxis[i].y] = 2;
 			}
 		}
+		ReleaseMutex(hMutexCentaxi);
+		ReleaseMutex(hMutexTaxis);
 		for (int i = 0; i < m->alturaMapa; i++) {
 			for (int j = 0; j < m->larguraMapa; j++) {
 				if(*(m->mapa + i * m->larguraMapa + j) == 1){
@@ -121,6 +123,12 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 			}
 		}
 	}
+
+	CloseHandle(hSemEsc);
+	CloseHandle(hMapFile);
+	CloseHandle(hSemLei);
+	CloseHandle(hMutexCentaxi);
+	CloseHandle(hMutexTaxis);
 }
 
 Mapinfo obtemDados() {
