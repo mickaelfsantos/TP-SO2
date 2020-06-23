@@ -41,6 +41,7 @@
 #define ARRAY_PASSAGEIROS TEXT("podeAtualizarArrayPassageiros")
 #define CENTAXI TEXT("centaxi")
 #define BUFFERCIRCULAR TEXT("bufferCircular")
+#define CHEGOU_PASSAGEIRO TEXT("chegouPassageiro")
 
 
 #define EVENTO_NOVO_TAXI TEXT("novoTaxiEvento")
@@ -97,9 +98,12 @@ typedef struct {
 	int atualizaMovimentacao; //0-carro novo // 1-atualiza carro
 	float velocidade;
 	int temPassageiro; //0- não tem, 1 tem
+	int aleatorio; //0-nao, 1 sim
 	TCHAR matricula[MATRICULA_BUFFER];
 	TCHAR pipe[PIPESIZE];
 	Passageiro passageiro;
+	int* caminho; 
+	int distancia;
 }Taxi;
 
 

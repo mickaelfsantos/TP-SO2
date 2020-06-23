@@ -152,7 +152,7 @@ extern "C" {          // we need to export the C interface
 	}
 
 	__declspec(dllexport) int __cdecl threadRespostasCentaxi(Contaxi* c) {
-		HANDLE hPipe;
+		HANDLE hPipe, hEvent;
 		Passageiro passageiro;
 		DWORD dwRead;
 
@@ -182,6 +182,8 @@ extern "C" {          // we need to export the C interface
 			_tprintf(TEXT("\n\tFoi-me atribuido o passageiro: %s\n\tComando:"), passageiro.nome);
 			c->taxi->temPassageiro = 1;
 			c->taxi->passageiro = passageiro;
+			hEvent = CreateEvent(NULL, TRUE, FALSE, CHEGOU_PASSAGEIRO);
+			SetEvent(hEvent);
 		}
 		else {
 		}

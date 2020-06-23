@@ -2,7 +2,7 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hWaitableTimer, hThreadPassageiros, hThreadRespostas;
+	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hWaitableTimer, hThreadPassageiros, hThreadRespostas, hThreadEsperaPassageiros;
 	Taxi taxi;
 	LARGE_INTEGER liDueTime;
 	Contaxi c;
@@ -62,6 +62,8 @@ int _tmain(int argc, TCHAR* argv[]) {
 	taxi.temPassageiro = 0;
 	taxi.xA = taxi.x;
 	taxi.yA = taxi.y;
+	taxi.aleatorio = 1;
+	taxi.distancia = -1;
 
 	
 	c.taxi = &taxi;
@@ -76,6 +78,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 	hThreadComandos = CreateThread(NULL, 0, threadComandosTaxi, &c, 0, NULL);
 	hThreadPassageiros = CreateThread(NULL, 0, threadPassageiros, &c, 0, NULL);
+	hThreadEsperaPassageiros = CreateThread(NULL, 0, threadEsperaPassageiro, &c, 0, NULL);
 
 	while (c.sair!=1) {
 
@@ -87,14 +90,27 @@ int _tmain(int argc, TCHAR* argv[]) {
 			return 1;
 		}
 		WaitForSingleObject(hWaitableTimer, INFINITE);
-		movimentaCarro(&c);
-		taxi.x = c.taxi->x;
-		taxi.y = c.taxi->y;
-		taxi.velocidade = c.taxi->velocidade;
-		taxi.xA = c.taxi->xA;
-		taxi.yA = c.taxi->yA;
-		dll_logV(TEXT("%d %d %f %s"), taxi.x, taxi.y, taxi.velocidade, taxi.matricula);
-		dll2_comunicaV(taxi);
+		if (c.taxi->aleatorio == 1) {
+			movimentaCarro(&c);
+			taxi.x = c.taxi->x;
+			taxi.y = c.taxi->y;
+			taxi.velocidade = c.taxi->velocidade;
+			taxi.xA = c.taxi->xA;
+			taxi.yA = c.taxi->yA;
+			dll_logV(TEXT("%d %d %f %s"), taxi.x, taxi.y, taxi.velocidade, taxi.matricula);
+			dll2_comunicaV(taxi);
+		}
+		else {
+			movimenta(&c);
+			taxi.x = c.taxi->x;
+			taxi.y = c.taxi->y;
+			taxi.velocidade = c.taxi->velocidade;
+			taxi.xA = c.taxi->xA;
+			taxi.yA = c.taxi->yA;
+			dll_logV(TEXT("%d %d %f %s"), taxi.x, taxi.y, taxi.velocidade, taxi.matricula);
+			dll2_comunicaV(taxi);
+		}
+		
 	}
 
 
@@ -104,6 +120,112 @@ int _tmain(int argc, TCHAR* argv[]) {
 }
 
 
+
+int posValida(int *mat, int *visited, int x, int y, int altura, int largura)
+{
+	if (x <= altura && y <= largura && x >= 0 && y >= 0)
+		if (*(mat + x * largura + y) == 1 && *(visited + x * largura + y) == 0)
+			return 1;
+
+	return 0;
+}
+
+int posValida2(int* mat, int x, int y, int altura, int largura)
+{
+	if (x <= altura && y <= largura && x >= 0 && y >= 0)
+		if (*(mat + x * largura + y) == 1)
+			return 1;
+
+	return 0;
+}
+
+
+void encontraCaminho(int *mat, int *visited, int x, int y,
+	int xPretendido, int yPretendido, int* min_dist, int dist, int*caminho, int altura, int largura)
+{
+
+	if (dist >= *min_dist)
+		return;
+
+	if (x == xPretendido && y == yPretendido)
+	{
+		if (dist < *min_dist) {
+			*min_dist = dist;
+			for (int k = 0; k < altura; k++) {
+				for (int l = 0; l < largura; l++) {
+					*(caminho + k * largura + l) = *(visited + k * largura + l);
+				}
+			}
+			*(caminho + x * largura + y) = 1;
+		}
+		return;
+	}
+
+	*(visited + x * largura + y) = 1;
+
+	// baixo
+	if (posValida(mat, visited, x + 1, y, altura, largura)==1)
+		encontraCaminho(mat, visited, x + 1, y, xPretendido, yPretendido, min_dist, dist + 1, caminho, altura, largura);
+
+	// direita
+	if (posValida(mat, visited, x, y + 1, altura, largura)==1)
+		encontraCaminho(mat, visited, x, y + 1, xPretendido, yPretendido, min_dist, dist + 1, caminho, altura, largura);
+
+	// cima
+	if (posValida(mat, visited, x - 1, y, altura, largura)==1)
+		encontraCaminho(mat, visited, x - 1, y, xPretendido, yPretendido, min_dist, dist + 1, caminho, altura, largura);
+
+	// esquerda
+	if (posValida(mat, visited, x, y - 1, altura, largura)==1)
+		encontraCaminho(mat, visited, x, y - 1, xPretendido, yPretendido, min_dist, dist + 1, caminho, altura, largura);
+
+	*(visited + x * largura + y) = 0;
+}
+
+
+void movimenta(Contaxi* c) {
+	HANDLE hMutex;
+
+	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
+		return -1;
+	}
+
+	WaitForSingleObject(hMutex, INFINITE);
+	
+	// baixo
+	if (posValida2(c->taxi->caminho, c->taxi->x + 1, c->taxi->y, c->alturaMapa, c->larguraMapa) == 1) {
+		moveBaixo(c, c->taxi->x);
+	}
+	else {
+		// direita
+		if (posValida2(c->taxi->caminho, c->taxi->x, c->taxi->y + 1, c->alturaMapa, c->larguraMapa) == 1) {
+			moveDireita(c, c->taxi->y);
+		}
+		else {
+			// cima
+			if (posValida2(c->taxi->caminho, c->taxi->x - 1, c->taxi->y + 1, c->alturaMapa, c->larguraMapa) == 1) {
+				moveCima(c, c->taxi->x);
+			}
+			else {
+				// esquerda
+				if (posValida2(c->taxi->caminho, c->taxi->x, c->taxi->y - 1, c->alturaMapa, c->larguraMapa) == 1) {
+					moveEsquerda(c, c->taxi->y);
+				}
+			}
+		}
+	}
+
+	*(c->taxi->caminho + c->taxi->xA * c->larguraMapa + c->taxi->yA) = 0;
+	c->taxi->distancia--;
+	if (c->taxi->distancia == 0) {
+		c->taxi->aleatorio = 1;
+	}
+	ReleaseMutex(hMutex);
+	CloseHandle(hMutex);
+
+}
 void movimentaCarro(Contaxi * c) {
 
 	int direcao, pos = -1, sair, nPossiveis = 0, posAux;
@@ -240,6 +362,51 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	dll_threadPassageiros(c);
 }
 
+DWORD WINAPI threadEsperaPassageiro(LPVOID lpParam) {
+	Contaxi* c = (Contaxi*)lpParam;
+	HANDLE hCom, hEvent, hMutex;
+	
+	hEvent = CreateEvent(NULL, TRUE, FALSE, CHEGOU_PASSAGEIRO);
+
+	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
+		return -1;
+	}
+	
+	while (c->sair != 1) {
+		WaitForSingleObject(hEvent, INFINITE);
+		ResetEvent(hEvent);
+		if (_tcscmp(c->taxi->passageiro.nome, TEXT("")) != 0) {
+			int* visited = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+			int* caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+			for (int i = 0; i < c->alturaMapa; i++) {
+				for (int j = 0; j < c->larguraMapa; j++) {
+					*(visited + i * c->larguraMapa + j) = 0;
+				}
+			}
+			for (int i = 0; i < c->alturaMapa; i++) {
+				for (int j = 0; j < c->larguraMapa; j++) {
+					*(caminho + i * c->larguraMapa + j) = 0;
+				}
+			}
+			
+			int min_dist = INT_MAX;
+
+			WaitForSingleObject(hMutex, INFINITE);
+			encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
+				c->taxi->passageiro.x, c->taxi->passageiro.y, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
+			c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+			memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
+			c->taxi->aleatorio = 0;
+			c->taxi->distancia = min_dist;
+			ReleaseMutex(hMutex);
+			free(visited);
+			free(caminho);
+		}
+	}
+
+}
 
 DWORD WINAPI threadInformacao(LPVOID lpParam) {
 	Taxi* taxi = (Taxi*)lpParam;
