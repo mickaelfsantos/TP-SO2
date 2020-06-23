@@ -64,6 +64,7 @@ DWORD WINAPI threadRecebeRespostas(LPVOID lpParam) {
 			exit(EXIT_FAILURE);
 		}
 		if (_tcscmp(p.taxi, TEXT("")) == 0) {
+			p.estado = 1;
 			_tprintf(TEXT("\n\tNão foi atribuido nenhum taxi ao passageiro %s\n\tOpção:"), p.nome);
 		}
 		else {
@@ -85,8 +86,8 @@ DWORD WINAPI criaPassageiro(LPVOID lpParam) {
 	p.estado = passageiro->estado;
 	p.x = passageiro->x;
 	p.y = passageiro->y;
-	p.xA = passageiro->xA;
-	p.yA = passageiro->yA;
+	p.xPretendido = passageiro->xPretendido;
+	p.yPretendido = passageiro->yPretendido;
 	_tcscpy_s(p.nome, sizeof(p.nome) / sizeof(TCHAR), passageiro->nome);
 
 
@@ -143,10 +144,11 @@ Passageiro obtemDados() {
 	_fgetts(p.nome, sizeof(p.nome) / sizeof(TCHAR), stdin);
 	for (i = 0; p.nome[i] != '\n'; i++);
 	p.nome[i] = '\0';
-	_tprintf(TEXT("\n\tPosições para onde pretende ser levado: "));
+	_tprintf(TEXT("\n\tPosições onde se encontra: "));
 	_tscanf_s(TEXT("%d, %d"), &p.x, &p.y);
-	p.xA = p.x;
-	p.yA = p.y;
+
+	_tprintf(TEXT("\n\tPosições para onde pretende ir: "));
+	_tscanf_s(TEXT("%d, %d"), &p.xPretendido, &p.yPretendido);
 	p.estado = 0;
 	return p;
 }

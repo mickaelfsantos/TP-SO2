@@ -16,11 +16,16 @@
 #define SEGUNDOSDEFAULT 10
 #define NQ 10
 
-#define WAIT_VELOCIDADE_DOIS -5000000LL
 #define WAIT_VELOCIDADE_UM -10000000LL
-#define WAIT_VELOCIDADE_UM_E_MEIO -6666666LL
-#define WAIT_VELOCIDADE_MEIO -20000000LL
 
+
+#define MATRICULA_BUFFER 12
+#define PIPESIZE 1024
+#define NOMEPASSAGEIRO 24
+#define BUFFSIZE 128
+
+#define PIPENAME_NOVO TEXT("\\\\.\\pipe\\NovoPassageiroPipe")
+#define PIPENAME_RESPOSTA TEXT("\\\\.\\pipe\\Resposta")
 
 
 #define MEMPAR_MAPA TEXT("MemoriaMapa")
@@ -31,16 +36,20 @@
 #define MEMPAR_INT TEXT("MemoriaInteressados")
 
 
-#define MUTEX_NOVO_TAXI_LEI TEXT("novoTaxiMutexLei")
-#define MUTEX_NOVO_TAXI_RES TEXT("novoTaxiMutexRes")
-#define MUTEX_NOVO_TAXI_ESC TEXT("novoTaxiMutexEsc")
-#define MUTEX_PODE_ATUALIZAR_ARRAY_ESC TEXT("podeEscrever")
-#define MUTEX_PODE_ATUALIZAR_ARRAY_LEI TEXT("podeLer")
+#define SEM_NOVO_TAXI_LEI TEXT("novoTaxiMutexLei")
+#define SEM_NOVO_TAXI_RES TEXT("novoTaxiMutexRes")
+#define SEM_NOVO_TAXI_ESC TEXT("novoTaxiMutexEsc")
+
+
+#define SEM_MAPA_ATUALIZAR_ESC TEXT("podeEscrever")
+#define SEM_MAPA_ATUALIZAR_LEI TEXT("podeLer")
+
 #define SEM_PODE_FECHAR_INFORMA_MAPA TEXT("podeFecharInformaMapa")
-#define ARRAY_TAXIS TEXT("podeAtualizarArrayTaxis")
-#define ARRAY_PASSAGEIROS TEXT("podeAtualizarArrayPassageiros")
+
 #define CENTAXI TEXT("centaxi")
+#define CONTAXI TEXT("contaxi")
 #define BUFFERCIRCULAR TEXT("bufferCircular")
+
 #define CHEGOU_PASSAGEIRO TEXT("chegouPassageiro")
 
 
@@ -49,18 +58,7 @@
 #define MEMPAR_SAI_TAXI TEXT("saiTaxiMemPar")
 #define INFORMA_Centaxi TEXT("Centaxi")
 #define EVENTO_SAI_TAXI TEXT("saiTaxiEvento")
-#define MUTEX_MAPA TEXT("CentaxiMutex")
-#define MUTEX_TAXI_SAI TEXT("mutexTaxiSai")
-#define MUTEX_TAXI TEXT("novoTaxiMutex")
 #define EVENTO_ENCERRA_TUDO TEXT("encerraTudo")
-#define MATRICULA_BUFFER 12
-#define PIPESIZE 1024
-#define NOMEPASSAGEIRO 24
-#define BUFFSIZE 128
-
-
-#define PIPENAME_NOVO TEXT("\\\\.\\pipe\\NovoPassageiroPipe")
-#define PIPENAME_RESPOSTA TEXT("\\\\.\\pipe\\Resposta")
 
 
 //structs
@@ -76,8 +74,8 @@ typedef struct {
 
 
 typedef struct {
-	int x, y, xA, yA;
-	int estado; //0-a aguardar taxi, 1-a ser transportado, 2-finalizou
+	int x, y, xPretendido, yPretendido;
+	int estado; //0-a aguardar taxi, 1-taxi a caminho, 2-a caminho do sitio pretendido
 	TCHAR nome[NOMEPASSAGEIRO];
 	TCHAR resposta[BUFFSIZE];
 	TCHAR taxi[MATRICULA_BUFFER];

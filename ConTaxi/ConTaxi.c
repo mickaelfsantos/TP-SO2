@@ -2,7 +2,7 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hWaitableTimer, hThreadPassageiros, hThreadRespostas, hThreadEsperaPassageiros;
+	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hMutex, hWaitableTimer, hThreadPassageiros, hThreadRespostas, hThreadEsperaPassageiros;
 	Taxi taxi;
 	LARGE_INTEGER liDueTime;
 	Contaxi c;
@@ -65,7 +65,6 @@ int _tmain(int argc, TCHAR* argv[]) {
 	taxi.aleatorio = 1;
 	taxi.distancia = -1;
 
-	
 	c.taxi = &taxi;
 
 	hWaitableTimer =  CreateWaitableTimer(NULL, TRUE, taxi.matricula);
@@ -79,7 +78,12 @@ int _tmain(int argc, TCHAR* argv[]) {
 	hThreadComandos = CreateThread(NULL, 0, threadComandosTaxi, &c, 0, NULL);
 	hThreadPassageiros = CreateThread(NULL, 0, threadPassageiros, &c, 0, NULL);
 	hThreadEsperaPassageiros = CreateThread(NULL, 0, threadEsperaPassageiro, &c, 0, NULL);
-
+	hMutex = CreateMutex(NULL, FALSE, CONTAXI);
+	if (hMutex == NULL) {
+		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
+		return -1;
+	}
+	_tcscpy_s(c.taxi->passageiro.nome, sizeof(c.taxi->passageiro.nome) / sizeof(TCHAR), TEXT(""));
 	while (c.sair!=1) {
 
 		liDueTime.QuadPart = (WAIT_VELOCIDADE_UM / taxi.velocidade);
@@ -90,6 +94,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 			return 1;
 		}
 		WaitForSingleObject(hWaitableTimer, INFINITE);
+		WaitForSingleObject(hMutex, INFINITE);
 		if (c.taxi->aleatorio == 1) {
 			movimentaCarro(&c);
 			taxi.x = c.taxi->x;
@@ -110,6 +115,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 			dll_logV(TEXT("%d %d %f %s"), taxi.x, taxi.y, taxi.velocidade, taxi.matricula);
 			dll2_comunicaV(taxi);
 		}
+		ReleaseMutex(hMutex, INFINITE);
 		
 	}
 
@@ -184,16 +190,7 @@ void encontraCaminho(int *mat, int *visited, int x, int y,
 
 
 void movimenta(Contaxi* c) {
-	HANDLE hMutex;
-
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
-	if (hMutex == NULL) {
-		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
-		return -1;
-	}
-
-	WaitForSingleObject(hMutex, INFINITE);
-	
+		
 	// baixo
 	if (posValida2(c->taxi->caminho, c->taxi->x + 1, c->taxi->y, c->alturaMapa, c->larguraMapa) == 1) {
 		moveBaixo(c, c->taxi->x);
@@ -205,7 +202,7 @@ void movimenta(Contaxi* c) {
 		}
 		else {
 			// cima
-			if (posValida2(c->taxi->caminho, c->taxi->x - 1, c->taxi->y + 1, c->alturaMapa, c->larguraMapa) == 1) {
+			if (posValida2(c->taxi->caminho, c->taxi->x - 1, c->taxi->y, c->alturaMapa, c->larguraMapa) == 1) {
 				moveCima(c, c->taxi->x);
 			}
 			else {
@@ -219,11 +216,14 @@ void movimenta(Contaxi* c) {
 
 	*(c->taxi->caminho + c->taxi->xA * c->larguraMapa + c->taxi->yA) = 0;
 	c->taxi->distancia--;
-	if (c->taxi->distancia == 0) {
+	if (c->taxi->distancia == 0)
+		if(c->taxi->passageiro.estado == 1) {
+			HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, CHEGOU_PASSAGEIRO);
+			SetEvent(hEvent);
+		}
+	else {
 		c->taxi->aleatorio = 1;
 	}
-	ReleaseMutex(hMutex);
-	CloseHandle(hMutex);
 
 }
 void movimentaCarro(Contaxi * c) {
@@ -232,15 +232,7 @@ void movimentaCarro(Contaxi * c) {
 	int aux[4] = { 0,0,0,0 };
 	int* arr = NULL;
 	int x, y, xA, yA;
-	HANDLE hMutex;
 
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
-	if (hMutex == NULL) {
-		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
-		return -1;
-	}
-
-	WaitForSingleObject(hMutex, INFINITE);
 	x = c->taxi->x;
 	y = c->taxi->y;
 	xA = c->taxi->xA;
@@ -326,8 +318,6 @@ void movimentaCarro(Contaxi * c) {
 		moveBaixo(c, x);
 		break;
 	}
-	ReleaseMutex(hMutex);
-	CloseHandle(hMutex);
 }
 
 
@@ -368,7 +358,7 @@ DWORD WINAPI threadEsperaPassageiro(LPVOID lpParam) {
 	
 	hEvent = CreateEvent(NULL, TRUE, FALSE, CHEGOU_PASSAGEIRO);
 
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 		return -1;
@@ -377,6 +367,7 @@ DWORD WINAPI threadEsperaPassageiro(LPVOID lpParam) {
 	while (c->sair != 1) {
 		WaitForSingleObject(hEvent, INFINITE);
 		ResetEvent(hEvent);
+		WaitForSingleObject(hMutex, INFINITE);
 		if (_tcscmp(c->taxi->passageiro.nome, TEXT("")) != 0) {
 			int* visited = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
 			int* caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
@@ -393,17 +384,31 @@ DWORD WINAPI threadEsperaPassageiro(LPVOID lpParam) {
 			
 			int min_dist = INT_MAX;
 
-			WaitForSingleObject(hMutex, INFINITE);
-			encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
-				c->taxi->passageiro.x, c->taxi->passageiro.y, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
-			c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
-			memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
+			if (c->taxi->passageiro.estado == 0) {
+				encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
+					c->taxi->passageiro.x, c->taxi->passageiro.y, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
+				c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+				memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
+				c->taxi->passageiro.estado = 1;
+				c->taxi->distancia = min_dist;
+				float tempo = c->taxi->distancia * c->taxi->velocidade;
+				_tprintf(TEXT("\n\tTempo: %.1f s"), tempo);
+			}
+			else {
+				encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
+					c->taxi->passageiro.xPretendido, c->taxi->passageiro.yPretendido, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
+				c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+				memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
+				c->taxi->passageiro.estado = 2;
+				c->taxi->distancia = min_dist;
+				float tempo = c->taxi->distancia * c->taxi->velocidade;
+				_tprintf(TEXT("\n\tTempo: %.1f s"), tempo);
+			}
 			c->taxi->aleatorio = 0;
-			c->taxi->distancia = min_dist;
-			ReleaseMutex(hMutex);
 			free(visited);
 			free(caminho);
 		}
+		ReleaseMutex(hMutex);
 	}
 
 }
@@ -450,18 +455,16 @@ DWORD WINAPI threadComandosTaxi(LPVOID lpParam) {
 	do {
 		mostraComandos();
 		_tprintf(TEXT("\n\n\tComando: ")); 
-		fflush(stdin);
-		_fgetts(comando, sizeof(comando) / sizeof(TCHAR), stdin);
-		for (i = 0; comando[i] != '\n'; i++);
-		comando[i] = '\0';
-		op = trataComando(comando, c);
+		fflush(stdin); 
+		_tscanf_s(TEXT("%d"), &op);
+		op = trataComando(op, c);
 	} while (op != -1);
 
 }
 
 void acelerar(Contaxi* c) {
 	HANDLE hMutex;
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 		return;
@@ -484,7 +487,7 @@ void sair(Taxi t) {
 
 void desacelerar(Contaxi* c) {
 	HANDLE hMutex;
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 		return;
@@ -500,7 +503,7 @@ void desacelerar(Contaxi* c) {
 void alterarNq(Contaxi* c) {
 	HANDLE hMutex;
 	int nq;
-	hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+	hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 		return;

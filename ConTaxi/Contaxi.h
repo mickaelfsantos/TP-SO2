@@ -1,5 +1,4 @@
 #include ".\..\Dll\dll.h"
-#define MUTEX_ALTERA_TAXI TEXT("mutexAlteraTaxi")
 #define WAITABLETIMER TEXT("WAITABLETIMER")
 
 

@@ -23,7 +23,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 
 DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 	Mapinfo* m = (Mapinfo*)lpParam;
-	HANDLE hSemLei, hSemEsc, hMapFile, hMutexCentaxi, hMutexTaxis;
+	HANDLE hSemLei, hSemEsc, hMapFile;
 	Taxi* t;
 
 	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, m->maxTaxis * sizeof(Taxi), MEMPAR_TAXIS);
@@ -44,7 +44,7 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 		return -1;
 	}
 
-	hSemEsc = CreateSemaphore(NULL, 1, 1, MUTEX_PODE_ATUALIZAR_ARRAY_ESC);
+	hSemEsc = CreateSemaphore(NULL, 1, 1, SEM_MAPA_ATUALIZAR_ESC);
 	if (hSemEsc == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
 
@@ -54,7 +54,7 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 		return -1;
 	}
 
-	hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_PODE_ATUALIZAR_ARRAY_LEI);
+	hSemLei = CreateSemaphore(NULL, 0, 1, SEM_MAPA_ATUALIZAR_LEI);
 	if (hSemLei == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
 
@@ -64,32 +64,13 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 
 		return -1;
 	}
-	hMutexCentaxi = CreateMutex(NULL, FALSE, CENTAXI);
-	if (hMutexCentaxi == NULL) {
-		UnmapViewOfFile(t);
-		CloseHandle(hSemEsc);
-		CloseHandle(hMapFile);
-		CloseHandle(hSemLei);
-		return -1;
-	}
-
-	hMutexTaxis = CreateMutex(NULL, FALSE, ARRAY_TAXIS);
-	if (hMutexTaxis == NULL) {
-		UnmapViewOfFile(t);
-		CloseHandle(hSemEsc);
-		CloseHandle(hMapFile);
-		CloseHandle(hSemLei);
-		return -1;
-	}
-
+	int c = 0;
 
 	while (m->sair!= 1) {
 		WaitForSingleObject(hSemLei, INFINITE);
 		if (m->sair == 1)
 			break;
-		WaitForSingleObject(hMutexCentaxi, INFINITE);
-		WaitForSingleObject(hMutexTaxis, INFINITE);
-		m->taxis = t;
+		m->taxis= t;
 		ReleaseSemaphore(hSemEsc, 1, NULL);
 		system("cls");
 		for (int i = 0; i < m->maxTaxis; i++) {
@@ -98,8 +79,6 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 				//m->mapaB[m->taxis[i].x][m->taxis[i].y] = 2;
 			}
 		}
-		ReleaseMutex(hMutexCentaxi);
-		ReleaseMutex(hMutexTaxis);
 		for (int i = 0; i < m->alturaMapa; i++) {
 			for (int j = 0; j < m->larguraMapa; j++) {
 				if(*(m->mapa + i * m->larguraMapa + j) == 1){
@@ -127,8 +106,6 @@ DWORD WINAPI atualizaTaxis(LPVOID lpParam) {
 	CloseHandle(hSemEsc);
 	CloseHandle(hMapFile);
 	CloseHandle(hSemLei);
-	CloseHandle(hMutexCentaxi);
-	CloseHandle(hMutexTaxis);
 }
 
 Mapinfo obtemDados() {
@@ -211,7 +188,7 @@ DWORD WINAPI threadEncerra(LPVOID lpParam) {
 	ResetEvent(hEvent);
 	m->sair = 1;
 
-	hSemLei = CreateSemaphore(NULL, 0, 1, MUTEX_PODE_ATUALIZAR_ARRAY_LEI);
+	hSemLei = CreateSemaphore(NULL, 0, 1, SEM_MAPA_ATUALIZAR_LEI);
 	if (hSemLei == NULL) {
 		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
 		return;
