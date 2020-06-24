@@ -2,7 +2,7 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCriaTaxis, hThreadInformaMapa, hThreadMapa, hThreadComunicacao, hThreadSai, hEventThread, hThreadComandos, hLib, hThreadPassageiros, hThreadCriaPassageiros;
+	HANDLE hThreadCriaTaxis, hThreadInformaMapa, hThreadMapa, hThreadComunicacao, hThreadSaiPassageiro, hThreadSai, hEventThread, hThreadComandos, hLib, hThreadPassageiros, hThreadCriaPassageiros;
 	Centaxi m;
 #ifdef UNICODE
 	_setmode(_fileno(stdin), _O_WTEXT);
@@ -53,6 +53,7 @@ int _tmain(int argc, TCHAR* argv[]) {
 	hThreadComunicacao = CreateThread(NULL, 0, threadComunicaTaxis, &m, 0, NULL);
 	hThreadComandos = CreateThread(NULL, 0, threadComandos, &m, 0, NULL);
 	hThreadSai = CreateThread(NULL, 0, threadSaiTaxi, &m, 0, NULL);
+	hThreadSaiPassageiro = CreateThread(NULL, 0, threadSaiPassageiro, &m, 0, NULL);
 
 
 	WaitForSingleObject(hThreadInformaMapa, INFINITE);
@@ -90,10 +91,92 @@ void mostraMapa(Centaxi* m) {
 	}
 }
 
+void expulsaTaxi(Centaxi *c) {
+	HANDLE hMutex, hPipe, hSemAtualizaEsc, hSemAtualizaLei;
+	DWORD dwWriten;
+	TCHAR matricula[MATRICULA_BUFFER];
+	TCHAR lixo[2];
+	int j = 0;
+
+	_tprintf(TEXT("\n\tIntroduza o nome do taxi a expulsar: "));
+	_fgetts(lixo, sizeof(lixo) / sizeof(TCHAR), stdin);
+	_fgetts(matricula, sizeof(matricula)/sizeof(TCHAR), stdin);
+	for (j = 0; matricula[j] != '\n'; j++);
+	matricula[j] = '\0';
+	hMutex = CreateMutex(NULL, FALSE, CENTAXI);
+
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return;
+	}
+
+	hSemAtualizaEsc = CreateSemaphore(NULL, 1, 1, SEM_MAPA_ATUALIZAR_ESC);
+	if (hSemAtualizaEsc == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
+
+		CloseHandle(hMutex);
+
+		return;
+	}
+
+	hSemAtualizaLei = CreateSemaphore(NULL, 0, 1, SEM_MAPA_ATUALIZAR_LEI);
+	if (hSemAtualizaLei == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de atualização (%d).\n"), GetLastError());
+
+		CloseHandle(hMutex);
+		CloseHandle(hSemAtualizaEsc);
+
+		return;
+	}
+
+	WaitForSingleObject(hMutex, INFINITE);
+	for (int i = 0; i < c->nTaxis; i++) {
+		if (_tcscmp(c->taxis[i].matricula, matricula) == 0) {
+			if (!WaitNamedPipe(c->taxis[i].pipeSaida, NMPWAIT_WAIT_FOREVER)) {
+				_tprintf(TEXT("[ERRO] Ligar ao pipe %s!\n"), c->taxis[i].pipeSaida);
+				exit(EXIT_FAILURE);
+			}
+			hPipe = CreateFile(c->taxis[i].pipeSaida, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+
+			if (hPipe == NULL) {
+				_tprintf(TEXT("[ERRO] Ligar ao pipe: %s!\n"), c->taxis[i].pipeSaida);
+				exit(EXIT_FAILURE);
+			}
+
+			if (!WriteFile(hPipe, &c->taxis[i], sizeof(Taxi), &dwWriten, NULL)) {
+				_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
+				exit(EXIT_FAILURE);
+			}
+			WaitForSingleObject(hSemAtualizaEsc, INFINITE);
+			for (int j = i; j < c->nTaxis - 1; j++) {
+				c->taxis[j].aceite = c->taxis[j + 1].aceite;
+				c->taxis[j].id = c->taxis[j + 1].id;
+				c->taxis[j].x = c->taxis[j + 1].x;
+				c->taxis[j].y = c->taxis[j + 1].y;
+				c->taxis[j].atualizaMovimentacao = c->taxis[j + 1].atualizaMovimentacao;
+				c->taxis[j].passageiro = c->taxis[j + 1].passageiro;
+				_tcscpy_s(c->taxis[j].matricula, sizeof(c->taxis[j].matricula), c->taxis[j + 1].matricula);
+				_tcscpy_s(c->taxis[j].pipe, sizeof(c->taxis[j].pipe), c->taxis[j + 1].pipe);
+				_tcscpy_s(c->taxis[j].pipeSaida, sizeof(c->taxis[j].pipeSaida), c->taxis[j + 1].pipeSaida);
+			}
+			c->taxis[c->nTaxis - 1].aceite = 0;
+			c->taxis[c->nTaxis - 1].id = -1;
+			c->nTaxis--;
+			ReleaseSemaphore(hSemAtualizaLei, 1, NULL);
+			break;
+		}
+	}
+	CloseHandle(hSemAtualizaEsc);
+	CloseHandle(hSemAtualizaLei);
+	ReleaseMutex(hMutex);
+	CloseHandle(hMutex);
+}
+
 int trataComando(int op, Centaxi* m) {
 	switch (op)
 	{
 	case 1:
+		expulsaTaxi(m);
 		break;
 	case 2:
 		return sair(m);
@@ -405,6 +488,90 @@ DWORD WINAPI threadCriaPassageiros(LPVOID lpParam) {
 	m->passageiros = t;
 }
 
+DWORD WINAPI threadSaiPassageiro(LPVOID lpParam) {
+	Centaxi* c = (Centaxi*)lpParam;
+	HANDLE hLib, hMapFile, hSemEsc, hSemLei, hMutex;
+	Passageiro* p;
+
+	hLib = LoadLibrary(TEXT(".\\..\\Debug\\SO2_TP_DLL_64.dll"));
+	dll_register dll_registerV = (dll_register)GetProcAddress(hLib, "dll_register");
+	dll_log dll_logV = (dll_log)GetProcAddress(hLib, "dll_log");
+
+	hMutex = CreateMutex(NULL, FALSE, CENTAXI);
+
+	if (hMutex == NULL) {
+		_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+		return EXIT_FAILURE;
+	}
+
+	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Passageiro), MEMPAR_SAI_PASSAGEIRO);
+
+	if (hMapFile == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+		return -1;
+	}
+	dll_registerV(MEMPAR_SAI_PASSAGEIRO, 6);
+	p = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Passageiro));
+
+	if (p == NULL)
+	{
+		_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+		CloseHandle(hMapFile);
+		return -1;
+	}
+	dll_registerV(MEMPAR_SAI_PASSAGEIRO, 7);
+
+	hSemEsc = CreateSemaphore(NULL, 1, 1, SEM_SAI_PASSA_ESC);
+	if (hSemEsc == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de escrita (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(p);
+		CloseHandle(hMapFile);
+
+		return -1;
+	}
+	dll_registerV(SEM_SAI_PASSA_ESC, 3);
+
+	hSemLei = CreateSemaphore(NULL, 0, 1, SEM_SAI_PASSA_LEI);
+	if (hSemLei == NULL) {
+		_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
+
+		UnmapViewOfFile(p);
+		CloseHandle(hSemEsc);
+		CloseHandle(hMapFile);
+
+		return -1;
+	}
+	dll_registerV(SEM_SAI_PASSA_LEI, 3);
+
+	while (c->sair != 1) {
+		WaitForSingleObject(hSemLei, INFINITE);
+		WaitForSingleObject(hMutex, INFINITE);
+		for (int i = 0; i < c->maxPass; i++) {
+			if (_tcscmp(c->passageiros[i].nome, p->nome) == 0) {
+				while (i < c->nPass - 1) {
+					c->passageiros[i].estado = c->passageiros[i + 1].estado;
+					c->passageiros[i].x = c->passageiros[i + 1].x;
+					c->passageiros[i].y = c->passageiros[i + 1].y;
+					c->passageiros[i].xPretendido = c->passageiros[i + 1].xPretendido;
+					c->passageiros[i].xPretendido = c->passageiros[i + 1].yPretendido;
+					_tcscpy_s(c->passageiros[i].nome, sizeof(c->passageiros[i].nome) / sizeof(TCHAR), c->passageiros[i + 1].nome);
+					_tcscpy_s(c->passageiros[i].taxi, sizeof(c->passageiros[i].taxi) / sizeof(TCHAR), c->passageiros[i + 1].taxi);
+					i++;
+				}
+				c->nPass--;
+				break;
+			}
+		}
+		ReleaseMutex(hMutex);
+		ReleaseSemaphore(hSemEsc, 1, NULL);
+	}
+
+
+}
+
 DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	HANDLE hMapFile, hLib, hPipe, hMutex, hMutexBufferCircular, hEvento[LIMITE_PASS], hThreads[LIMITE_PASS], hMapFileInteressados;
 	Centaxi* m = (Centaxi*)lpParam;
@@ -448,6 +615,7 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 		_tcscpy_s(st[i].nomePassageiro, sizeof(st[i].nomePassageiro) / sizeof(TCHAR), TEXT(""));
 		st[i].nSegundos = m->nSegundos;
 	}
+	m->interessados = st;
 
 	hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(BufferCircular), MEMPAR_PASS);
 
@@ -507,7 +675,6 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	}
 
 	while (!m->sair) {
-
 		if (!ConnectNamedPipe(hPipe, NULL)) {
 			_tprintf(TEXT("[ERRO] Ligação ao pipe do servior!\n"));
 			exit(EXIT_FAILURE);
@@ -523,7 +690,7 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 		}
 
 		WaitForSingleObject(hMutexBufferCircular, INFINITE);
-		if ((b.w == LIMITE_PASS && b.r == 0) || b.w + 1 == b.r) {
+		if ((bc[0].w == LIMITE_PASS && bc[0].r == 0) || bc[0].w + 1 == bc[0].r) {
 			_tcscpy_s(passageiro.resposta, sizeof(passageiro.resposta) / sizeof(TCHAR), TEXT("Buffer circular cheio. Tente mais tarde."));
 			if (!WriteFile(hPipe, &passageiro, sizeof(Passageiro), &dwWrite, NULL)) {
 				_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
@@ -564,39 +731,29 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 			continue;
 		}
 
-		m->passageiros[m->nPass].estado = passageiro.estado;
-		m->passageiros[m->nPass].x = passageiro.x;
-		m->passageiros[m->nPass].xPretendido = passageiro.xPretendido;
-		m->passageiros[m->nPass].y = passageiro.y;
-		m->passageiros[m->nPass].yPretendido = passageiro.yPretendido;
-		_tcscpy_s((m->passageiros + m->nPass)->nome, sizeof(passageiro.nome) / sizeof(TCHAR), passageiro.nome);
-		m->nPass++;
-		if (b.w == LIMITE_PASS)
-			b.w = 0;
-		b.passageiros[b.w] = passageiro;
+		
+		if (bc[0].w == LIMITE_PASS)
+			bc[0].w = 0;
+		bc[0].passageiros[bc[0].w] = passageiro;
 		
 		StructThread s;
 
 		s.pass = passageiro;
-		s.nSegundos = m->nSegundos;
-		s.inte = st;
+		s.centaxi = m;
 		s.bc = bc;
-		s.passageiros = m->passageiros;
-		s.nPass = m->nPass;
-		s.maxTaxis = m->maxTaxis;
-		s.nSemaforo = b.w;
+		s.nSemaforo = bc[0].w;
 
 		ReleaseMutex(hMutex);
-		hThreads[b.w] = CreateThread(NULL, 0, atribuiTaxiPassageiro, &s, 0, &dwId);
+		hThreads[bc[0].w] = CreateThread(NULL, 0, atribuiTaxiPassageiro, &s, 0, &dwId);
 
-		if (hThreads[b.w] == NULL)
+		if (hThreads[bc[0].w] == NULL)
 		{
 			_tprintf(TEXT("CreateThread failed, GLE=%d.\n"), GetLastError());
 			return -1;
 		}
-		SetEvent(hEvento[b.w]);
+		SetEvent(hEvento[bc[0].w]);
 
-		b.w = (++b.w) % (LIMITE_PASS + 1);
+		bc[0].w = (++bc[0].w) % (LIMITE_PASS + 1);
 		_tprintf(TEXT("\n\tNovo passageiro: %s\n\tComando:"), passageiro.nome);
 
 		_tcscpy_s(passageiro.resposta, sizeof(passageiro.resposta) / sizeof(TCHAR), TEXT("Aguarde por um interessado"));
@@ -618,8 +775,8 @@ DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam) {
 	StructThread* st = (StructThread*)lpParam;
 	StructThread s;
-	HANDLE hWaitableTimer, hLib, hPipe, hMutexBufferCircular, hMutex, hEvent, hPipeResposta;
-	LARGE_INTEGER liDueTime;
+	HANDLE hWaitableTimer, hLib, hPipe, hMutexBufferCircular, hMutex, hEvent, hPipeResposta, hSemLei;
+	LARGE_INTEGER liDueTime2;
 	Taxi* taxis=NULL;
 	DWORD dwWriten;
 	int contador = 0, pos;
@@ -653,29 +810,29 @@ DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam) {
 		return EXIT_FAILURE;
 	}
 	
-	hWaitableTimer = CreateWaitableTimer(NULL, TRUE, st->pass.nome);
+	hWaitableTimer = CreateWaitableTimer(NULL, TRUE, s.pass.nome);
 	if (hWaitableTimer == NULL) {
 		printf("Erro ao criar waitable timer (%d)\n", GetLastError());
 		return 1;
 	}
 	dll_registerV(st->pass.nome, 5);
 
-	liDueTime.QuadPart = (WAIT_VELOCIDADE_UM * st->nSegundos);
+	liDueTime2.QuadPart = (WAIT_VELOCIDADE_UM * st->centaxi->nSegundos);
 
-	if (!SetWaitableTimer(hWaitableTimer, &liDueTime, 0, NULL, NULL, 0)){
+	if (!SetWaitableTimer(hWaitableTimer, &liDueTime2, 0, NULL, NULL, 0)){
 		printf("Erro ao fazer setWaitableTimer (%d)\n", GetLastError());
 		return 1;
 	}
 	WaitForSingleObject(hWaitableTimer, INFINITE);
 	ResetEvent(hEvent);
-	for (int i = 0; i < st->maxTaxis; i++) {
-		if (_tcscmp(st->inte[i].nomePassageiro, s.pass.nome) == 0) {
+	for (int i = 0; i < st->centaxi->maxTaxis; i++) {
+		if (_tcscmp(st->centaxi->interessados[i].nomePassageiro, s.pass.nome) == 0) {
 			taxis = realloc(taxis, ((contador++) + 1) * sizeof(Taxi));
-			_tcscpy_s(taxis[contador-1].matricula, sizeof(st->inte[i].matricula) / sizeof(TCHAR), st->inte[i].matricula);
-			_tcscpy_s(taxis[contador - 1].pipe, sizeof(st->inte[i].pipe) / sizeof(TCHAR), st->inte[i].pipe);
-			_tcscpy_s(st->inte[i].matricula, MATRICULA_BUFFER, TEXT(""));
-			_tcscpy_s(st->inte[i].nomePassageiro, NOMEPASSAGEIRO, TEXT(""));
-			_tcscpy_s(st->inte[i].pipe, PIPESIZE, TEXT(""));
+			_tcscpy_s(taxis[contador-1].matricula, sizeof(st->centaxi->interessados[i].matricula) / sizeof(TCHAR), st->centaxi->interessados[i].matricula);
+			_tcscpy_s(taxis[contador-1].pipe, sizeof(st->centaxi->interessados[i].pipe) / sizeof(TCHAR), st->centaxi->interessados[i].pipe);
+			_tcscpy_s(st->centaxi->interessados[i].matricula, MATRICULA_BUFFER, TEXT(""));
+			_tcscpy_s(st->centaxi->interessados[i].nomePassageiro, NOMEPASSAGEIRO, TEXT(""));
+			_tcscpy_s(st->centaxi->interessados[i].pipe, PIPESIZE, TEXT(""));
 		}
 	}
 
@@ -683,6 +840,15 @@ DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam) {
 
 		srand((int)time(NULL));
 		pos = rand() % (contador);
+
+		st->centaxi->passageiros[st->centaxi->nPass].estado = s.pass.estado;
+		st->centaxi->passageiros[st->centaxi->nPass].x = s.pass.x;
+		st->centaxi->passageiros[st->centaxi->nPass].xPretendido = s.pass.xPretendido;
+		st->centaxi->passageiros[st->centaxi->nPass].y = s.pass.y;
+		st->centaxi->passageiros[st->centaxi->nPass].yPretendido = s.pass.yPretendido;
+		_tcscpy_s(st->centaxi->passageiros[st->centaxi->nPass].nome, sizeof(st->centaxi->passageiros[st->centaxi->nPass].nome) / sizeof(TCHAR), s.pass.nome);
+		_tcscpy_s(st->centaxi->passageiros[st->centaxi->nPass].taxi, sizeof(st->centaxi->passageiros[st->centaxi->nPass].taxi) / sizeof(TCHAR), taxis[pos].matricula);
+		st->centaxi->nPass++;
 
 		_tcscpy_s(s.pass.taxi, sizeof(s.pass.taxi) / sizeof(TCHAR), taxis[pos].matricula);
 		for (int i = 0; i < contador; i++) {
@@ -721,26 +887,6 @@ DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam) {
 			exit(EXIT_FAILURE);
 		}
 
-		WaitForSingleObject(hMutexBufferCircular, INFINITE);
-		st->bc->r = (++st->bc->r) % (LIMITE_PASS);
-		ReleaseMutex(hMutexBufferCircular);
-		WaitForSingleObject(hMutex, INFINITE);
-		for (int i = 0; i < st->nPass; i++) {
-			if (_tcscmp(st->passageiros[i].nome, s.pass.nome) == 0) {
-				while (i < st->nPass - 1) {
-					st->passageiros[i].estado = st->passageiros[i + 1].estado;
-					st->passageiros[i].x = st->passageiros[i + 1].x;
-					st->passageiros[i].y = st->passageiros[i + 1].y;
-					st->passageiros[i].xPretendido = st->passageiros[i + 1].xPretendido;
-					st->passageiros[i].xPretendido = st->passageiros[i + 1].yPretendido;
-					_tcscpy_s(st->passageiros[i].nome, sizeof(st->passageiros[i].nome) / sizeof(TCHAR), st->passageiros[i + 1].nome);
-					_tcscpy_s(st->passageiros[i].resposta, sizeof(st->passageiros[i].resposta) / sizeof(TCHAR), st->passageiros[i + 1].resposta);
-					i++;
-				}
-				st->nPass--;
-			}
-		}
-		ReleaseMutex(hMutex);
 	}
 	else {
 
@@ -759,7 +905,17 @@ DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam) {
 			_tprintf(TEXT("[ERRO] Escrever no pipe!\n"));
 			exit(EXIT_FAILURE);
 		}
+		/*hSemLei = CreateSemaphore(NULL, 0, 1, SEM_SAI_PASSA_LEI);
+		if (hSemLei == NULL) {
+			_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
+			return -1;
+		}
+		ReleaseSemaphore(hSemLei, 1, NULL);*/
 	}
+	WaitForSingleObject(hMutexBufferCircular, INFINITE);
+	st->bc[0].r = (++st->bc[0].r) % (LIMITE_PASS);
+	ReleaseMutex(hMutexBufferCircular);
+	free(taxis);
 	CloseHandle(hMutexBufferCircular);
 	CloseHandle(hMutex);
 }
@@ -903,6 +1059,7 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 			aux.aceite = 1;
 			_tcscpy_s(aux.matricula, sizeof(aux.matricula) / sizeof(TCHAR), t->matricula);
 			_tcscpy_s(aux.pipe, sizeof(aux.pipe) / sizeof(TCHAR), t->pipe);
+			_tcscpy_s(aux.pipeSaida, sizeof(aux.pipeSaida) / sizeof(TCHAR), t->pipeSaida);
 			WaitForSingleObject(hMutex, INFINITE);
 			if (m->nTaxis != m->maxTaxis) {
 				for (int j = 0; j < m->nTaxis; j++) {
@@ -950,6 +1107,7 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam) {
 				m->taxis[m->nTaxis].velocidade = aux.velocidade;
 				_tcscpy_s(m->taxis[m->nTaxis].matricula, sizeof(m->taxis[m->nTaxis].matricula) / sizeof(TCHAR), aux.matricula);
 				_tcscpy_s(m->taxis[m->nTaxis].pipe, sizeof(m->taxis[m->nTaxis].pipe) / sizeof(TCHAR), aux.pipe);
+				_tcscpy_s(m->taxis[m->nTaxis].pipeSaida, sizeof(m->taxis[m->nTaxis].pipeSaida) / sizeof(TCHAR), aux.pipeSaida);
 				m->nTaxis++;
 				_tprintf(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
 				dll_logV(TEXT("\n\tNovo taxi! Matricula: %s. ID: %d"), m->taxis[m->nTaxis - 1].matricula, m->taxis[m->nTaxis - 1].id);
@@ -1071,7 +1229,11 @@ DWORD WINAPI threadSaiTaxi(LPVOID lpParam) {
 					m->taxis[j].id = m->taxis[j + 1].id;
 					m->taxis[j].x = m->taxis[j + 1].x;
 					m->taxis[j].y = m->taxis[j + 1].y;
+					m->taxis[j].atualizaMovimentacao = m->taxis[j + 1].atualizaMovimentacao;
+					m->taxis[j].passageiro = m->taxis[j + 1].passageiro;
 					_tcscpy_s(m->taxis[j].matricula, sizeof(m->taxis[j].matricula), m->taxis[j+1].matricula);
+					_tcscpy_s(m->taxis[j].pipe, sizeof(m->taxis[j].pipe), m->taxis[j + 1].pipe);
+					_tcscpy_s(m->taxis[j].pipeSaida, sizeof(m->taxis[j].pipeSaida), m->taxis[j + 1].pipeSaida);
 				}
 				m->taxis[m->nTaxis-1].aceite = 0; 
 				m->taxis[m->nTaxis-1].id = -1;

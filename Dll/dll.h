@@ -13,8 +13,8 @@
 //vars
 #define LIMITE_TAXIS 5
 #define LIMITE_PASS 5
-#define SEGUNDOSDEFAULT 10
-#define NQ 10
+#define SEGUNDOSDEFAULT 7
+#define NQ 1
 
 #define WAIT_VELOCIDADE_UM -10000000LL
 
@@ -34,12 +34,16 @@
 #define MEMPAR_TAXI_NOVO TEXT("MemoriaTaxiNovo")
 #define MEMPAR_PASS TEXT("MemoriaPassageiros")
 #define MEMPAR_INT TEXT("MemoriaInteressados")
+#define MEMPAR_SAI_PASSAGEIRO TEXT("MemoriaSaiPassageiro")
 
 
 #define SEM_NOVO_TAXI_LEI TEXT("novoTaxiMutexLei")
 #define SEM_NOVO_TAXI_RES TEXT("novoTaxiMutexRes")
 #define SEM_NOVO_TAXI_ESC TEXT("novoTaxiMutexEsc")
 
+
+#define SEM_SAI_PASSA_ESC TEXT("saiPassaArrayEsc")
+#define SEM_SAI_PASSA_LEI TEXT("saiPassaArrayLei")
 
 #define SEM_MAPA_ATUALIZAR_ESC TEXT("podeEscrever")
 #define SEM_MAPA_ATUALIZAR_LEI TEXT("podeLer")
@@ -99,6 +103,7 @@ typedef struct {
 	int aleatorio; //0-nao, 1 sim
 	TCHAR matricula[MATRICULA_BUFFER];
 	TCHAR pipe[PIPESIZE];
+	TCHAR pipeSaida[PIPESIZE];
 	Passageiro passageiro;
 	int* caminho; 
 	int distancia;
@@ -138,3 +143,5 @@ typedef void(_cdecl* dll_register)(TCHAR* text);
 typedef Taxi(__cdecl* dll2_comunica)(Taxi taxi);
 typedef int(__cdecl* dll2_threadPassageiros)(Contaxi*c);
 typedef int(__cdecl* dll2_threadRespostasCentaxi)(Contaxi* c);
+typedef void(__cdecl* dll2_saiPassageiro)(Contaxi* c);
+typedef void(__cdecl* dll2_threadSair)(Contaxi* c);

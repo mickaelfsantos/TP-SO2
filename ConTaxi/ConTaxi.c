@@ -2,12 +2,13 @@
 
 int _tmain(int argc, TCHAR* argv[]) {
 
-	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hMutex, hWaitableTimer, hThreadPassageiros, hThreadRespostas, hThreadEsperaPassageiros;
+	HANDLE hThreadCom, hThreadEnc, hThreadComandos, hThreadInf, hThreadMovimentacao, hThreadExpulso, hMutex, hWaitableTimer, hThreadPassageiros, hThreadRespostas, hThreadEsperaPassageiros;
 	Taxi taxi;
 	LARGE_INTEGER liDueTime;
 	Contaxi c;
 	int i;
 	TCHAR pipe[PIPESIZE];
+	TCHAR wt[BUFFSIZE];
 
 	HINSTANCE hLib, hCom;
 
@@ -64,10 +65,12 @@ int _tmain(int argc, TCHAR* argv[]) {
 	taxi.yA = taxi.y;
 	taxi.aleatorio = 1;
 	taxi.distancia = -1;
+	ZeroMemory(&taxi.passageiro, sizeof(Passageiro));
 
 	c.taxi = &taxi;
 
-	hWaitableTimer =  CreateWaitableTimer(NULL, TRUE, taxi.matricula);
+	_itot_s(taxi.id, wt, sizeof(wt) / sizeof(TCHAR), 10);
+	hWaitableTimer =  CreateWaitableTimer(NULL, TRUE, wt);
 	if (hWaitableTimer ==NULL){
 		printf("Erro ao criar waitable timer (%d)\n", GetLastError());
 		return 1;
@@ -78,14 +81,14 @@ int _tmain(int argc, TCHAR* argv[]) {
 	hThreadComandos = CreateThread(NULL, 0, threadComandosTaxi, &c, 0, NULL);
 	hThreadPassageiros = CreateThread(NULL, 0, threadPassageiros, &c, 0, NULL);
 	hThreadEsperaPassageiros = CreateThread(NULL, 0, threadEsperaPassageiro, &c, 0, NULL);
+	hThreadExpulso = CreateThread(NULL, 0, threadSair, &c, 0, NULL);
+	
 	hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 	if (hMutex == NULL) {
 		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 		return -1;
 	}
-	_tcscpy_s(c.taxi->passageiro.nome, sizeof(c.taxi->passageiro.nome) / sizeof(TCHAR), TEXT(""));
 	while (c.sair!=1) {
-
 		liDueTime.QuadPart = (WAIT_VELOCIDADE_UM / taxi.velocidade);
 		
 		if (!SetWaitableTimer(hWaitableTimer, &liDueTime, 0, NULL, NULL, 0))
@@ -190,7 +193,7 @@ void encontraCaminho(int *mat, int *visited, int x, int y,
 
 
 void movimenta(Contaxi* c) {
-		
+	HANDLE hCom;
 	// baixo
 	if (posValida2(c->taxi->caminho, c->taxi->x + 1, c->taxi->y, c->alturaMapa, c->larguraMapa) == 1) {
 		moveBaixo(c, c->taxi->x);
@@ -216,14 +219,20 @@ void movimenta(Contaxi* c) {
 
 	*(c->taxi->caminho + c->taxi->xA * c->larguraMapa + c->taxi->yA) = 0;
 	c->taxi->distancia--;
-	if (c->taxi->distancia == 0)
-		if(c->taxi->passageiro.estado == 1) {
+	if (c->taxi->distancia == 0) {
+		if (c->taxi->passageiro.estado == 1) {
 			HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, CHEGOU_PASSAGEIRO);
 			SetEvent(hEvent);
 		}
-	else {
-		c->taxi->aleatorio = 1;
+		else {
+			hCom = LoadLibrary(TEXT("Dll.dll"));
+			dll2_saiPassageiro dll2_saiPassageiroM = (dll2_saiPassageiro)GetProcAddress(hCom, "saiPassageiro");
+			dll2_saiPassageiroM(c);
+			c->taxi->aleatorio = 1;
+		}
 	}
+		
+	
 
 }
 void movimentaCarro(Contaxi * c) {
@@ -343,6 +352,13 @@ void moveBaixo(Contaxi* c, float x) {
 	c->taxi->yA = c->taxi->y;
 }
 
+DWORD WINAPI threadSair(LPVOID lpParam) {
+	Contaxi* c = (Contaxi*)lpParam;
+	HANDLE hCom;
+	hCom = LoadLibrary(TEXT("Dll.dll"));
+	dll2_threadSair dll_threadSair = (dll2_threadSair)GetProcAddress(hCom, "threadSair");
+	dll_threadSair(c);
+}
 
 DWORD WINAPI threadPassageiros(LPVOID lpParam) {
 	Contaxi* c = (Contaxi*)lpParam;
@@ -363,50 +379,68 @@ DWORD WINAPI threadEsperaPassageiro(LPVOID lpParam) {
 		_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 		return -1;
 	}
-	
+	//BUG
 	while (c->sair != 1) {
 		WaitForSingleObject(hEvent, INFINITE);
 		ResetEvent(hEvent);
 		WaitForSingleObject(hMutex, INFINITE);
-		if (_tcscmp(c->taxi->passageiro.nome, TEXT("")) != 0) {
-			int* visited = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
-			int* caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
-			for (int i = 0; i < c->alturaMapa; i++) {
-				for (int j = 0; j < c->larguraMapa; j++) {
-					*(visited + i * c->larguraMapa + j) = 0;
+		if (_tcscmp(c->taxi->passageiro.nome, TEXT("\0")) != 0) {
+			if (c->taxi->temPassageiro == 0) {
+				int* visited = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+				int* caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+				for (int i = 0; i < c->alturaMapa; i++) {
+					for (int j = 0; j < c->larguraMapa; j++) {
+						*(visited + i * c->larguraMapa + j) = 0;
+					}
 				}
-			}
-			for (int i = 0; i < c->alturaMapa; i++) {
-				for (int j = 0; j < c->larguraMapa; j++) {
-					*(caminho + i * c->larguraMapa + j) = 0;
+				for (int i = 0; i < c->alturaMapa; i++) {
+					for (int j = 0; j < c->larguraMapa; j++) {
+						*(caminho + i * c->larguraMapa + j) = 0;
+					}
 				}
-			}
-			
-			int min_dist = INT_MAX;
 
-			if (c->taxi->passageiro.estado == 0) {
+				int min_dist = INT_MAX;
+
 				encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
 					c->taxi->passageiro.x, c->taxi->passageiro.y, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
 				c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
 				memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
 				c->taxi->passageiro.estado = 1;
 				c->taxi->distancia = min_dist;
+				c->taxi->temPassageiro = 1;
+				c->taxi->aleatorio = 0;
 				float tempo = c->taxi->distancia * c->taxi->velocidade;
 				_tprintf(TEXT("\n\tTempo: %.1f s"), tempo);
 			}
 			else {
-				encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
-					c->taxi->passageiro.xPretendido, c->taxi->passageiro.yPretendido, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
-				c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
-				memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
-				c->taxi->passageiro.estado = 2;
-				c->taxi->distancia = min_dist;
-				float tempo = c->taxi->distancia * c->taxi->velocidade;
-				_tprintf(TEXT("\n\tTempo: %.1f s"), tempo);
+				if (c->taxi->distancia == 0) {
+					int* visited = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+					int* caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+					for (int i = 0; i < c->alturaMapa; i++) {
+						for (int j = 0; j < c->larguraMapa; j++) {
+							*(visited + i * c->larguraMapa + j) = 0;
+						}
+					}
+					for (int i = 0; i < c->alturaMapa; i++) {
+						for (int j = 0; j < c->larguraMapa; j++) {
+							*(caminho + i * c->larguraMapa + j) = 0;
+						}
+					}
+
+					int min_dist = INT_MAX;
+					encontraCaminho(c->mapa, visited, c->taxi->x, c->taxi->y,
+						c->taxi->passageiro.xPretendido, c->taxi->passageiro.yPretendido, &min_dist, 0, caminho, c->alturaMapa, c->larguraMapa);
+					c->taxi->caminho = malloc(sizeof(int) * c->alturaMapa * c->larguraMapa);
+					memcpy(c->taxi->caminho, caminho, sizeof(int) * c->alturaMapa * c->larguraMapa);
+					c->taxi->passageiro.estado = 2;
+					c->taxi->distancia = min_dist;
+					float tempo = c->taxi->distancia * c->taxi->velocidade;
+					_tprintf(TEXT("\n\tTempo: %.1f s"), tempo);
+					c->taxi->aleatorio = 0;
+					free(visited);
+					free(caminho);
+				}
 			}
-			c->taxi->aleatorio = 0;
-			free(visited);
-			free(caminho);
 		}
 		ReleaseMutex(hMutex);
 	}
@@ -417,7 +451,7 @@ DWORD WINAPI threadInformacao(LPVOID lpParam) {
 	Taxi* taxi = (Taxi*)lpParam;
 	TCHAR lixo[2];
 	int i;
-	TCHAR pipe[PIPESIZE];
+	TCHAR pipe[PIPESIZE], pipeSaida[PIPESIZE];
 
 	taxi->id = GetCurrentProcessId();
 	_tprintf(TEXT("Olá. O seu ID é: %d"), taxi->id);
@@ -435,6 +469,11 @@ DWORD WINAPI threadInformacao(LPVOID lpParam) {
 	_tcscpy_s(pipe, PIPESIZE, TEXT("\\\\.\\pipe\\pipe"));
 	_tcscat_s(pipe, PIPESIZE, taxi->matricula);
 	_tcscpy_s(taxi->pipe, PIPESIZE, pipe);
+
+
+	_tcscpy_s(pipeSaida, PIPESIZE, TEXT("\\\\.\\pipe\\pipeS"));
+	_tcscat_s(pipeSaida, PIPESIZE, taxi->matricula);
+	_tcscpy_s(taxi->pipeSaida, PIPESIZE, pipeSaida);
 }
 
 DWORD WINAPI threadEncerra(LPVOID lpParam) {
@@ -446,6 +485,7 @@ DWORD WINAPI threadEncerra(LPVOID lpParam) {
 	ResetEvent(hEvent);
 	c->sair = 1;
 }
+
 
 DWORD WINAPI threadComandosTaxi(LPVOID lpParam) {
 	Contaxi* c = (Contaxi*)lpParam;

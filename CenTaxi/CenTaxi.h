@@ -19,12 +19,8 @@ typedef struct {
 
 typedef struct {
 	Passageiro pass;
-	Interessados* inte;
-	int nSegundos;
-	Passageiro* passageiros;
 	BufferCircular* bc;
-	int nPass;
-	int maxTaxis;
+	Centaxi* centaxi;
 	int nSemaforo;
 }StructThread;
 
@@ -44,3 +40,4 @@ DWORD WINAPI threadComunicaTaxis(LPVOID lpParam);
 DWORD WINAPI threadSaiTaxi(LPVOID lpParam);
 DWORD WINAPI atribuiTaxiPassageiro(LPVOID lpParam);
 DWORD WINAPI threadCriaPassageiros(LPVOID lpParam);
+DWORD WINAPI threadSaiPassageiro(LPVOID lpParam);

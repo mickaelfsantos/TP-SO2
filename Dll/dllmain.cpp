@@ -139,12 +139,114 @@ extern "C" {          // we need to export the C interface
 		return 0;
 	}
 
+
+	__declspec(dllexport) void __cdecl saiPassageiro(Contaxi c) {
+
+		HANDLE hLib, hMapFile, hSemEsc, hSemLei, hMutex;
+		Passageiro* p;
+
+		hMutex = CreateMutex(NULL, FALSE, CONTAXI);
+
+		if (hMutex == NULL) {
+			_tprintf(TEXT("Erro ao criar mutex: %d\n"), GetLastError());
+			return;
+		}
+
+		hMapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(Passageiro), MEMPAR_SAI_PASSAGEIRO);
+
+		if (hMapFile == NULL)
+		{
+			_tprintf(TEXT("Erro ao fazer CreateFileMapping (%d).\n"), GetLastError());
+			return;
+		}
+		p = (Passageiro*)MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Passageiro));
+
+		if (p == NULL)
+		{
+			_tprintf(TEXT("Erro ao fazer MapViewOfFile (%d).\n"), GetLastError());
+
+			CloseHandle(hMapFile);
+			return;
+		}
+
+		hSemEsc = CreateSemaphore(NULL, 1, 1, SEM_SAI_PASSA_ESC);
+		if (hSemEsc == NULL) {
+			_tprintf(TEXT("Erro ao criar semaforo de escrita (%d).\n"), GetLastError());
+
+			UnmapViewOfFile(p);
+			CloseHandle(hMapFile);
+			return;
+		}
+
+		hSemLei = CreateSemaphore(NULL, 0, 1, SEM_SAI_PASSA_LEI);
+		if (hSemLei == NULL) {
+			_tprintf(TEXT("Erro ao criar semaforo de leitura (%d).\n"), GetLastError());
+
+			UnmapViewOfFile(p);
+			CloseHandle(hSemEsc);
+			CloseHandle(hMapFile);
+			return;
+		}
+
+		WaitForSingleObject(hSemEsc, INFINITE);
+		WaitForSingleObject(hMutex, INFINITE);
+		CopyMemory(p, &c.taxi->passageiro, sizeof(Passageiro));
+		ReleaseSemaphore(hSemLei, 1, NULL);
+		ZeroMemory(&c.taxi->passageiro, sizeof(Passageiro));
+		c.taxi->temPassageiro = 0;
+		c.taxi->distancia = -1;
+		ReleaseMutex(hMutex);
+
+	}
+
+
+	__declspec(dllexport) void __cdecl threadSair(Contaxi* c) {
+		HANDLE hPipe, hEvent, hMutex;
+		Taxi taxi;
+		DWORD dwRead;
+
+		hMutex = CreateMutex(NULL, FALSE, CONTAXI);
+		if (hMutex == NULL) {
+			_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
+			return;
+		}
+
+		hPipe = CreateNamedPipe(c->taxi->pipeSaida, PIPE_ACCESS_DUPLEX, PIPE_WAIT | PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE, 1,
+			sizeof(Taxi), sizeof(Taxi), 0, NULL);
+
+		if (hPipe == INVALID_HANDLE_VALUE) {
+			_tprintf(TEXT("[ERRO] Problema ao criar named pipe do servidor: %d\n"), GetLastError());
+			return;
+		}
+
+		if (!ConnectNamedPipe(hPipe, NULL)) {
+			_tprintf(TEXT("\n\tErro ao fazer ConnectNamedPipe: %d\n"), GetLastError());
+			exit(-1);
+		}
+
+		if (!ReadFile(hPipe, &taxi, sizeof(Taxi), &dwRead, NULL)) {
+			_tprintf(TEXT("[ERRO] Leitura do named pipe: %d\n"), GetLastError());
+			exit(EXIT_FAILURE);
+		}
+
+		if (!dwRead) {
+			_tprintf(TEXT("[ERRO] Não foram lidos bytes \n"));
+			exit(EXIT_FAILURE);
+		}
+		WaitForSingleObject(hMutex, INFINITE);
+		c->sair = 1;
+		ReleaseMutex(hMutex);
+		DisconnectNamedPipe(hPipe);
+		CloseHandle(hPipe);
+
+	}
+
 	__declspec(dllexport) int __cdecl threadRespostasCentaxi(Contaxi* c) {
 		HANDLE hPipe, hEvent, hMutex;
 		Passageiro passageiro;
 		DWORD dwRead;
 
-		hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+		hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 		if (hMutex == NULL) {
 			_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 			return -1;
@@ -175,7 +277,6 @@ extern "C" {          // we need to export the C interface
 		WaitForSingleObject(hMutex, INFINITE);
 		if (_tcscmp(passageiro.taxi, c->taxi->matricula) == 0) {
 			_tprintf(TEXT("\n\tFoi-me atribuido o passageiro: %s\n\tComando:"), passageiro.nome);
-			c->taxi->temPassageiro = 1;
 			c->taxi->passageiro = passageiro;
 			hEvent = CreateEvent(NULL, TRUE, FALSE, CHEGOU_PASSAGEIRO);
 			SetEvent(hEvent);
@@ -226,7 +327,7 @@ extern "C" {          // we need to export the C interface
 			}
 		}
 
-		hMutex = CreateMutex(NULL, FALSE, MUTEX_ALTERA_TAXI);
+		hMutex = CreateMutex(NULL, FALSE, CONTAXI);
 		if (hMutex == NULL) {
 			_tprintf(TEXT("\nErro ao criar Mutex (%d)"), GetLastError());
 			return -1;
@@ -251,7 +352,7 @@ extern "C" {          // we need to export the C interface
 		}
 
 		while (c->sair != 1) {
-			sPosicao = WaitForMultipleObjects(c->maxTaxis, hEvento, FALSE, INFINITE);
+			sPosicao = WaitForMultipleObjects(LIMITE_PASS, hEvento, FALSE, INFINITE);
 			WaitForSingleObject(hMutex, INFINITE);
 			if (c->taxi->temPassageiro == 1) {
 				ReleaseMutex(hMutex);
@@ -265,12 +366,16 @@ extern "C" {          // we need to export the C interface
 					pos = i;
 					for (int j = 0; j < c->maxTaxis; j++) {
 						if (_tcscmp(st[j].matricula, TEXT("")) == 0) {
-							if (((bc->passageiros[i].x + c->nq > c->taxi->x) || ((bc->passageiros[i].x - c->nq < c->taxi->x))) &&
-								((bc->passageiros[i].y + c->nq > c->taxi->y) || ((bc->passageiros[i].y - c->nq < c->taxi->y)))) {
-								_tcscpy_s(st[j].matricula, sizeof(st[j].matricula) / sizeof(TCHAR), c->taxi->matricula);
-								_tcscpy_s(st[j].pipe, sizeof(st[j].pipe) / sizeof(TCHAR), c->taxi->pipe);
-								_tcscpy_s(st[j].nomePassageiro, sizeof(st[j].nomePassageiro) / sizeof(TCHAR), bc->passageiros[pos].nome);
-								threadRespostasCentaxi(c);
+							if (bc->passageiros[i].x + c->nq > c->taxi->x && bc->passageiros[i].x - c->nq < c->taxi->x){
+								if (bc->passageiros[i].y + c->nq > c->taxi->y && bc->passageiros[i].y - c->nq < c->taxi->y) {
+									_tcscpy_s(st[j].matricula, sizeof(st[j].matricula) / sizeof(TCHAR), c->taxi->matricula);
+									_tcscpy_s(st[j].pipe, sizeof(st[j].pipe) / sizeof(TCHAR), c->taxi->pipe);
+									_tcscpy_s(st[j].nomePassageiro, sizeof(st[j].nomePassageiro) / sizeof(TCHAR), bc->passageiros[pos].nome);
+									_tprintf(TEXT("\nPos: %d, NomePassageiro: %s, BC: %s, Matricula: %s"), pos, st[j].nomePassageiro, bc->passageiros[pos].nome, c->taxi->matricula);
+									ReleaseMutex(hMutex);
+									threadRespostasCentaxi(c);
+									return 0;
+								}
 								break;
 							}
 							else {
@@ -279,10 +384,10 @@ extern "C" {          // we need to export the C interface
 							
 						}
 					}
+					ReleaseMutex(hMutex);
 					break;
 				}
 			}
-			ReleaseMutex(hMutex);
 		}
 	}
 

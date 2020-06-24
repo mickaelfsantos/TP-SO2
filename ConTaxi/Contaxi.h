@@ -23,6 +23,7 @@ void limpaEcra();
 int trataComando(TCHAR comando[], Contaxi* c);
 void moveEsquerda(Contaxi* c, float y);
 void moveDireita(Contaxi* c, float y);
+DWORD WINAPI threadSair(LPVOID lpParam);
 void moveBaixo(Contaxi* c, float x);
 void moveCima(Contaxi* c, float x);
 
